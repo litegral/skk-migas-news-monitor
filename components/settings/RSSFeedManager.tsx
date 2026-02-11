@@ -173,7 +173,7 @@ export function RSSFeedManager({ feeds }: Readonly<RSSFeedManagerProps>) {
       <div className="flex flex-col gap-2">
         {feeds.length === 0 && !isAdding ? (
           <p className="py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-            No RSS feeds yet. Add one to get started.
+            Belum ada RSS feed. Tambahkan feed untuk memulai.
           </p>
         ) : (
           feeds.map((feed) => (

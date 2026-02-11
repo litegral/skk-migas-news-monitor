@@ -3,16 +3,34 @@
 /**
  * AnalysisContext provides background analysis state management.
  *
- * When analysis is started, it loops calling /api/news/analyze until all
- * articles are processed. Progress is tracked and exposed to components
- * throughout the dashboard.
+ * When analysis is started, it opens an SSE connection to /api/news/analyze/stream
+ * and receives real-time progress updates as each article is processed.
  */
 
 import React from "react";
 import { useSWRConfig } from "swr";
 
-/** Batch size for each analyze API call */
-const ANALYZE_BATCH_SIZE = 50;
+/** SSE event data types */
+interface SSEProgressEvent {
+  type: "progress";
+  analyzed: number;
+  failed: number;
+  total: number;
+}
+
+interface SSECompleteEvent {
+  type: "complete";
+  analyzed: number;
+  failed: number;
+  total: number;
+}
+
+interface SSEErrorEvent {
+  type: "error";
+  message: string;
+}
+
+type SSEEvent = SSEProgressEvent | SSECompleteEvent | SSEErrorEvent;
 
 interface AnalysisState {
   /** Whether analysis is currently running */
@@ -23,7 +41,7 @@ interface AnalysisState {
   failedCount: number;
   /** Total number of articles pending when analysis started */
   totalPending: number;
-  /** Start background analysis loop */
+  /** Start background analysis via SSE stream */
   startAnalysis: (pendingCount: number) => void;
   /** Stop the current analysis */
   stopAnalysis: () => void;
@@ -43,83 +61,94 @@ export function AnalysisProvider({ children }: Readonly<AnalysisProviderProps>) 
   const [failedCount, setFailedCount] = React.useState(0);
   const [totalPending, setTotalPending] = React.useState(0);
 
-  // Use ref for abort flag to avoid stale closure issues
-  const abortRef = React.useRef(false);
+  // Store EventSource reference for cleanup
+  const eventSourceRef = React.useRef<EventSource | null>(null);
 
   const startAnalysis = React.useCallback(
-    async (pendingCount: number) => {
+    (pendingCount: number) => {
       if (isAnalyzing || pendingCount <= 0) return;
 
       // Reset state
-      abortRef.current = false;
       setIsAnalyzing(true);
       setAnalyzedCount(0);
       setFailedCount(0);
       setTotalPending(pendingCount);
 
-      let remaining = pendingCount;
-      let totalAnalyzed = 0;
-      let totalFailed = 0;
+      // Open SSE connection
+      const eventSource = new EventSource("/api/news/analyze/stream");
+      eventSourceRef.current = eventSource;
 
-      // Loop until all articles are processed or aborted
-      while (remaining > 0 && !abortRef.current) {
+      eventSource.onmessage = (event) => {
         try {
-          const res = await fetch("/api/news/analyze", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ limit: ANALYZE_BATCH_SIZE }),
-          });
+          const data = JSON.parse(event.data) as SSEEvent;
 
-          if (!res.ok) {
-            console.error("[AnalysisContext] API error:", res.status);
-            break;
+          if (data.type === "progress") {
+            setAnalyzedCount(data.analyzed);
+            setFailedCount(data.failed);
+            // Update total in case it differs from initial pendingCount
+            if (data.total !== pendingCount) {
+              setTotalPending(data.total);
+            }
           }
 
-          const json = await res.json();
-          const data = json.data;
+          if (data.type === "complete") {
+            setAnalyzedCount(data.analyzed);
+            setFailedCount(data.failed);
+            setIsAnalyzing(false);
+            eventSource.close();
+            eventSourceRef.current = null;
 
-          if (!data) {
-            console.error("[AnalysisContext] No data in response");
-            break;
+            // Revalidate dashboard data
+            mutate("/api/dashboard");
+
+            console.log(
+              `[AnalysisContext] Analysis complete: ${data.analyzed} analyzed, ${data.failed} failed`
+            );
           }
 
-          totalAnalyzed += data.analyzed ?? 0;
-          totalFailed += data.failed ?? 0;
-          remaining = data.remaining ?? 0;
-
-          // Update state
-          setAnalyzedCount(totalAnalyzed);
-          setFailedCount(totalFailed);
-
-          // If nothing was processed, we're done (or stuck)
-          if ((data.analyzed ?? 0) === 0 && (data.failed ?? 0) === 0) {
-            break;
+          if (data.type === "error") {
+            console.error("[AnalysisContext] Server error:", data.message);
+            setIsAnalyzing(false);
+            eventSource.close();
+            eventSourceRef.current = null;
           }
-
-          // Trigger SWR revalidation for dashboard data
-          mutate("/api/dashboard");
         } catch (err) {
-          console.error("[AnalysisContext] Fetch error:", err);
-          break;
+          console.error("[AnalysisContext] Failed to parse SSE event:", err);
         }
-      }
+      };
 
-      // Analysis complete
-      setIsAnalyzing(false);
+      eventSource.onerror = (event) => {
+        console.error("[AnalysisContext] SSE connection error:", event);
+        setIsAnalyzing(false);
+        eventSource.close();
+        eventSourceRef.current = null;
 
-      // Final revalidation to ensure UI is up to date
-      mutate("/api/dashboard");
-
-      console.log(
-        `[AnalysisContext] Analysis complete: ${totalAnalyzed} analyzed, ${totalFailed} failed`
-      );
+        // Revalidate dashboard data in case some articles were processed
+        mutate("/api/dashboard");
+      };
     },
     [isAnalyzing, mutate]
   );
 
   const stopAnalysis = React.useCallback(() => {
-    abortRef.current = true;
-    // isAnalyzing will be set to false when the loop detects abort
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    setIsAnalyzing(false);
+
+    // Revalidate dashboard data
+    mutate("/api/dashboard");
+  }, [mutate]);
+
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+    };
   }, []);
 
   const value = React.useMemo(

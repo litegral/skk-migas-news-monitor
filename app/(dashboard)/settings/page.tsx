@@ -32,7 +32,7 @@ export default async function SettingsPage() {
           Settings
         </h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Manage your topics and RSS feed sources.
+          Kelola topik dan sumber RSS feed Anda.
         </p>
       </div>
 
@@ -40,10 +40,10 @@ export default async function SettingsPage() {
         {/* Topics section */}
         <Card>
           <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50">
-            Topics
+            Topik
           </h2>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Topics are used as search queries for RapidAPI and to filter RSS articles.
+            Topik digunakan sebagai pencarian untuk RapidAPI dan untuk filter artikel RSS.
           </p>
           <div className="mt-4">
             <TopicManager topics={topics ?? []} />
@@ -56,7 +56,7 @@ export default async function SettingsPage() {
             RSS Feeds
           </h2>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Add and manage custom RSS feed sources.
+            Tambah dan kelola sumber RSS feed kustom.
           </p>
           <div className="mt-4">
             <RSSFeedManager feeds={rssFeeds ?? []} />

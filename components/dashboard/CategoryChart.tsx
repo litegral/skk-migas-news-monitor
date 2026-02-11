@@ -19,16 +19,16 @@ export function CategoryChart({ data }: Readonly<CategoryChartProps>) {
   // For a single-category bar chart, we use the category as index and count as the value
   const chartData = data.map((item) => ({
     category: item.category,
-    Articles: item.count,
+    Artikel: item.count,
   }));
 
   return (
     <Card>
       <h2 className="text-sm font-medium text-gray-900 dark:text-gray-50">
-        Category Distribution
+        Distribusi Kategori
       </h2>
       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-        Articles by topic category
+        Artikel berdasarkan kategori topik
       </p>
 
       {hasData ? (
@@ -36,19 +36,20 @@ export function CategoryChart({ data }: Readonly<CategoryChartProps>) {
           <BarChart
             data={chartData}
             index="category"
-            categories={["Articles"]}
+            categories={["Artikel"]}
             colors={["blue"]}
             valueFormatter={(value) => value.toString()}
             showLegend={false}
             showGridLines={true}
             className="h-64"
             layout="vertical"
+            yAxisWidth={120}
           />
         </div>
       ) : (
         <div className="mt-4 flex h-64 items-center justify-center rounded-md border border-dashed border-gray-300 dark:border-gray-700">
           <p className="text-sm text-gray-400 dark:text-gray-500">
-            No categories yet
+            Belum ada kategori
           </p>
         </div>
       )}

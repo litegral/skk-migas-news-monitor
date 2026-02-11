@@ -68,7 +68,7 @@ export function ArticleCard({ article }: Readonly<ArticleCardProps>) {
 
         {/* Summary or snippet */}
         <p className="line-clamp-2 text-sm text-gray-600 dark:text-gray-300">
-          {article.summary || article.snippet || "No description available."}
+          {article.summary || article.snippet || "Tidak ada deskripsi tersedia."}
         </p>
 
         {/* Matched topics */}
@@ -88,7 +88,7 @@ export function ArticleCard({ article }: Readonly<ArticleCardProps>) {
             ))}
             {article.matchedTopics.length > 3 && (
               <span className="text-xs text-gray-400">
-                +{article.matchedTopics.length - 3} more
+                +{article.matchedTopics.length - 3} lainnya
               </span>
             )}
           </div>
@@ -102,7 +102,7 @@ export function ArticleCard({ article }: Readonly<ArticleCardProps>) {
           ))}
           {article.categories && article.categories.length > 3 && (
             <span className="text-xs text-gray-400">
-              +{article.categories.length - 3} more
+              +{article.categories.length - 3} lainnya
             </span>
           )}
         </div>

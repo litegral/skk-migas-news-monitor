@@ -1,23 +1,23 @@
 /**
- * POST /api/news/rapidapi
+ * POST /api/news/googlenews
  *
- * Triggers a fetch of news articles from RapidAPI for the authenticated user's
- * enabled search queries. Articles are upserted into the `articles` table.
+ * Triggers a fetch of news articles from Google News RSS for the authenticated
+ * user's enabled topics/keywords. Articles are upserted into the `articles` table.
  *
- * HARDENED: Includes proper error aggregation and structured logging.
+ * Google News RSS is free and doesn't require an API key.
  */
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { fetchAndStoreRapidAPI } from "@/lib/services/news";
+import { fetchAndStoreGoogleNews } from "@/lib/services/news";
 import type { ApiResponse } from "@/lib/types/news";
 
-interface RapidAPIResponseData {
+interface GoogleNewsResponseData {
   inserted: number;
   errors: string[];
 }
 
-export async function POST(): Promise<NextResponse<ApiResponse<RapidAPIResponseData>>> {
+export async function POST(): Promise<NextResponse<ApiResponse<GoogleNewsResponseData>>> {
   const startTime = Date.now();
 
   try {
@@ -27,18 +27,18 @@ export async function POST(): Promise<NextResponse<ApiResponse<RapidAPIResponseD
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      console.warn("[api/news/rapidapi] Unauthorized request");
+      console.warn("[api/news/googlenews] Unauthorized request");
       return NextResponse.json(
         { data: null, error: "Unauthorized" },
         { status: 401 },
       );
     }
 
-    const result = await fetchAndStoreRapidAPI(supabase, user.id);
+    const result = await fetchAndStoreGoogleNews(supabase, user.id);
 
     // Log the request
     console.log(JSON.stringify({
-      route: "/api/news/rapidapi",
+      route: "/api/news/googlenews",
       userId: user.id,
       inserted: result.inserted,
       errorCount: result.errors.length,
@@ -59,7 +59,7 @@ export async function POST(): Promise<NextResponse<ApiResponse<RapidAPIResponseD
       error: null,
     });
   } catch (err) {
-    console.error("[api/news/rapidapi] Unhandled error:", err);
+    console.error("[api/news/googlenews] Unhandled error:", err);
     return NextResponse.json(
       { data: null, error: "Internal server error" },
       { status: 500 },

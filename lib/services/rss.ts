@@ -202,11 +202,17 @@ function normalizeDate(raw?: string): string | null {
 
 export interface TopicForFiltering {
   name: string;
+  /** Keywords for OR-based matching. Topics with no keywords are skipped. */
+  keywords: string[];
 }
 
 /**
- * Filter articles to keep only those that match at least one topic.
- * Matching is case-insensitive substring search in title and snippet.
+ * Filter articles to keep only those that match at least one topic keyword.
+ * 
+ * Matching logic:
+ * - Topics with empty keywords array are skipped
+ * - Match if ANY keyword phrase is found in title/snippet (OR logic)
+ * - Case-insensitive substring matching (exact phrase match)
  *
  * @param articles - Array of articles to filter.
  * @param topics - Array of topics to match against.
@@ -216,8 +222,11 @@ export function filterArticlesByTopics(
   articles: Article[],
   topics: TopicForFiltering[],
 ): Article[] {
-  if (topics.length === 0) {
-    console.warn("[rss] No topics provided for filtering, returning empty array");
+  // Filter to only topics that have keywords defined
+  const topicsWithKeywords = topics.filter((t) => t.keywords.length > 0);
+
+  if (topicsWithKeywords.length === 0) {
+    console.warn("[rss] No topics with keywords provided for filtering, returning empty array");
     return [];
   }
 
@@ -233,11 +242,13 @@ export function filterArticlesByTopics(
     ].join(" ").toLowerCase();
 
     // Check each topic
-    for (const topic of topics) {
-      const topicLower = topic.name.toLowerCase();
+    for (const topic of topicsWithKeywords) {
+      // OR logic: match if ANY keyword phrase is found (case-insensitive substring)
+      const matched = topic.keywords.some((keyword) => {
+        return searchableText.includes(keyword.toLowerCase());
+      });
 
-      // Case-insensitive substring match
-      if (searchableText.includes(topicLower)) {
+      if (matched) {
         matchedTopics.push(topic.name);
       }
     }

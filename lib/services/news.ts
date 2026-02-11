@@ -2,7 +2,7 @@
  * News orchestration service.
  *
  * Coordinates the full data pipeline:
- *   1. Fetch articles from RapidAPI / RSS sources (using topics)
+ *   1. Fetch articles from Google News RSS / RSS sources (using topics)
  *   2. Filter RSS articles by topic keywords
  *   3. Deduplicate and upsert into the `articles` table
  *   4. Crawl full content via Crawl4AI for unprocessed articles
@@ -17,7 +17,7 @@ import pLimit from "p-limit";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types/database";
 import type { Article } from "@/lib/types/news";
-import { fetchRapidAPINews } from "@/lib/services/rapidapi";
+import { fetchGoogleNewsArticles } from "@/lib/services/googlenews";
 import { fetchRSSFeedArticles, filterArticlesByTopics } from "@/lib/services/rss";
 import { crawlArticleContent } from "@/lib/services/crawler";
 import { analyzeArticle } from "@/lib/services/llm";
@@ -25,11 +25,16 @@ import { analyzeArticle } from "@/lib/services/llm";
 type SupabaseDB = SupabaseClient<Database>;
 
 /** Concurrency limits for external API calls */
-const RAPIDAPI_CONCURRENCY = 2; // Max 2 parallel RapidAPI queries
 const RSS_CONCURRENCY = 5; // Max 5 parallel RSS fetches
+
+/** Delay between Google News requests to be respectful (ms) */
+const GOOGLENEWS_DELAY_MS = 2000;
 
 /** Delay between LLM calls to avoid rate limits (ms) */
 const LLM_DELAY_MS = 500;
+
+/** Maximum keywords to fetch per topic (to limit API calls) */
+const MAX_KEYWORDS_PER_TOPIC = 5;
 
 // ---------------------------------------------------------------------------
 // Fetch & Store
@@ -41,21 +46,25 @@ export interface FetchResult {
 }
 
 /**
- * Fetch articles from RapidAPI for all enabled topics, then upsert.
- * Each topic becomes a search query, and results are tagged with that topic.
+ * Fetch articles from Google News RSS for all enabled topics using their keywords.
+ * Each keyword becomes a search query, and results are tagged with the topic name.
+ * Topics without keywords are skipped.
+ * Requests are made sequentially with delay to be respectful to Google.
  *
+ * @param supabase - Supabase client instance.
+ * @param userId - The authenticated user's ID.
  * @returns Number of articles upserted and any errors encountered.
  */
-export async function fetchAndStoreRapidAPI(
+export async function fetchAndStoreGoogleNews(
   supabase: SupabaseDB,
   userId: string,
 ): Promise<FetchResult> {
   const errors: string[] = [];
 
-  // 1. Get enabled topics for this user.
+  // 1. Get enabled topics with keywords for this user.
   const { data: topics, error: tErr } = await supabase
     .from("topics")
-    .select("name")
+    .select("name, keywords")
     .eq("user_id", userId)
     .eq("enabled", true);
 
@@ -67,30 +76,60 @@ export async function fetchAndStoreRapidAPI(
     return { inserted: 0, errors: ["No enabled topics found"] };
   }
 
-  // 2. Fetch articles from RapidAPI with concurrency control.
-  // Each topic name is used as the search query.
-  const limit = pLimit(RAPIDAPI_CONCURRENCY);
-  const fetchPromises = topics.map((t) =>
-    limit(async () => {
-      const result = await fetchRapidAPINews(t.name, { topicName: t.name });
-      if (result.error) {
-        errors.push(`Topic "${t.name}": ${result.error}`);
-      }
-      return result.data;
-    })
-  );
+  // 2. Build list of keywords to fetch
+  const keywordQueue: { keyword: string; topicName: string }[] = [];
 
-  const fetchResults = await Promise.all(fetchPromises);
-  const allArticles = fetchResults.flat();
+  for (const topic of topics) {
+    // Skip topics without keywords
+    if (!topic.keywords || topic.keywords.length === 0) {
+      console.log(`[news] Skipping topic "${topic.name}" - no keywords defined`);
+      continue;
+    }
+
+    // Limit to first N keywords per topic
+    const keywordsToFetch = topic.keywords.slice(0, MAX_KEYWORDS_PER_TOPIC);
+
+    for (const keyword of keywordsToFetch) {
+      keywordQueue.push({ keyword, topicName: topic.name });
+    }
+  }
+
+  if (keywordQueue.length === 0) {
+    return { inserted: 0, errors: ["No keywords found in any enabled topic"] };
+  }
+
+  // 3. Fetch articles from Google News sequentially with delay
+  const allArticles: Article[] = [];
+
+  for (let i = 0; i < keywordQueue.length; i++) {
+    const { keyword, topicName } = keywordQueue[i];
+
+    console.log(`[news] Fetching keyword ${i + 1}/${keywordQueue.length}: "${keyword}" (topic: ${topicName})`);
+
+    const result = await fetchGoogleNewsArticles(keyword, { topicName });
+
+    if (result.error) {
+      errors.push(`Keyword "${keyword}": ${result.error}`);
+    }
+
+    if (result.data && result.data.length > 0) {
+      allArticles.push(...result.data);
+    }
+
+    // Add delay before next request (skip for last keyword)
+    if (i < keywordQueue.length - 1) {
+      await sleep(GOOGLENEWS_DELAY_MS);
+    }
+  }
 
   if (allArticles.length === 0) {
     return { inserted: 0, errors };
   }
 
-  // 3. Upsert into the articles table.
+  // 4. Upsert into the articles table (with matchedTopics merging).
   const count = await upsertArticles(supabase, userId, allArticles);
 
-  console.log(`[news] RapidAPI: Inserted ${count} articles from ${topics.length} topics`);
+  console.log(`[news] Google News: Inserted ${count} articles from ${keywordQueue.length} keyword searches`);
   return { inserted: count, errors };
 }
 
@@ -124,7 +163,7 @@ export async function fetchAndStoreRSS(
   // 2. Get enabled topics for filtering.
   const { data: topics, error: tErr } = await supabase
     .from("topics")
-    .select("name")
+    .select("name, keywords")
     .eq("user_id", userId)
     .eq("enabled", true);
 
@@ -318,53 +357,118 @@ function sleep(ms: number): Promise<void> {
 /**
  * Upsert an array of normalised articles into the `articles` table.
  * Deduplicates by the `UNIQUE(user_id, link)` constraint.
+ * 
+ * Key behaviors:
+ * - For NEW articles: Insert with ai_processed = false
+ * - For EXISTING articles: Only update matched_topics (preserves AI analysis)
+ * - Topics are merged when the same article matches new keywords
  *
- * @returns Number of rows upserted.
+ * @returns Number of rows inserted (new articles only).
  */
 async function upsertArticles(
   supabase: SupabaseDB,
   userId: string,
   articles: Article[],
 ): Promise<number> {
-  // Map domain articles to DB row shape.
-  const rows = articles.map((a) => ({
-    user_id: userId,
-    title: a.title,
-    link: a.link,
-    snippet: a.snippet,
-    photo_url: a.photoUrl,
-    source_name: a.sourceName,
-    source_url: a.sourceUrl,
-    published_at: a.publishedAt,
-    source_type: a.sourceType as "rapidapi" | "rss",
-    matched_topics: a.matchedTopics ?? [],
-    ai_processed: false,
-  }));
+  if (articles.length === 0) return 0;
 
-  // Upsert in chunks to avoid request size limits.
-  const CHUNK_SIZE = 50;
-  let total = 0;
+  // 1. Get unique links from incoming articles
+  const links = [...new Set(articles.map((a) => a.link))];
 
-  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
-    const chunk = rows.slice(i, i + CHUNK_SIZE);
+  // 2. Fetch existing articles with these links
+  const { data: existing } = await supabase
+    .from("articles")
+    .select("link, matched_topics")
+    .eq("user_id", userId)
+    .in("link", links);
 
-    const { data, error } = await supabase
-      .from("articles")
-      .upsert(chunk, {
-        onConflict: "user_id,link",
-        ignoreDuplicates: false,
-      })
-      .select("id");
-
-    if (error) {
-      console.error(
-        `[news] Upsert error (chunk ${i / CHUNK_SIZE + 1}):`,
-        error.message,
-      );
-    } else {
-      total += data?.length ?? 0;
-    }
+  // 3. Create a set of existing links and map of their topics
+  const existingLinksSet = new Set<string>();
+  const existingTopicsMap = new Map<string, string[]>();
+  for (const row of existing ?? []) {
+    existingLinksSet.add(row.link);
+    existingTopicsMap.set(row.link, row.matched_topics ?? []);
   }
 
-  return total;
+  // 4. Deduplicate articles by link and merge matchedTopics
+  const uniqueByLink = new Map<string, Article>();
+  for (const article of articles) {
+    const existingTopics = existingTopicsMap.get(article.link) ?? [];
+    const currentTopics = uniqueByLink.get(article.link)?.matchedTopics ?? [];
+    const newTopics = article.matchedTopics ?? [];
+
+    // Merge all topics (existing DB + previously seen in batch + current)
+    const mergedTopics = [...new Set([...existingTopics, ...currentTopics, ...newTopics])];
+
+    uniqueByLink.set(article.link, { ...article, matchedTopics: mergedTopics });
+  }
+
+  const deduplicatedArticles = Array.from(uniqueByLink.values());
+
+  // 5. Separate new articles from existing ones
+  const newArticles = deduplicatedArticles.filter((a) => !existingLinksSet.has(a.link));
+  const existingArticles = deduplicatedArticles.filter((a) => existingLinksSet.has(a.link));
+
+  let totalInserted = 0;
+
+  // 6. INSERT new articles (with ai_processed = false)
+  if (newArticles.length > 0) {
+    const newRows = newArticles.map((a) => ({
+      user_id: userId,
+      title: a.title,
+      link: a.link,
+      snippet: a.snippet,
+      photo_url: a.photoUrl,
+      source_name: a.sourceName,
+      source_url: a.sourceUrl,
+      published_at: a.publishedAt,
+      source_type: a.sourceType as "googlenews" | "rss",
+      matched_topics: a.matchedTopics ?? [],
+      ai_processed: false,
+    }));
+
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < newRows.length; i += CHUNK_SIZE) {
+      const chunk = newRows.slice(i, i + CHUNK_SIZE);
+
+      const { data, error } = await supabase
+        .from("articles")
+        .insert(chunk)
+        .select("id");
+
+      if (error) {
+        console.error(
+          `[news] Insert error (chunk ${i / CHUNK_SIZE + 1}):`,
+          error.message,
+        );
+      } else {
+        totalInserted += data?.length ?? 0;
+      }
+    }
+
+    console.log(`[news] Inserted ${totalInserted} new articles`);
+  }
+
+  // 7. UPDATE existing articles (only matched_topics, preserving AI fields)
+  if (existingArticles.length > 0) {
+    let updatedCount = 0;
+
+    for (const article of existingArticles) {
+      const { error } = await supabase
+        .from("articles")
+        .update({ matched_topics: article.matchedTopics ?? [] })
+        .eq("user_id", userId)
+        .eq("link", article.link);
+
+      if (error) {
+        console.error(`[news] Update error for "${article.link}":`, error.message);
+      } else {
+        updatedCount++;
+      }
+    }
+
+    console.log(`[news] Updated matched_topics for ${updatedCount} existing articles`);
+  }
+
+  return totalInserted;
 }

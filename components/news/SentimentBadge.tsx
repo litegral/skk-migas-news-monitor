@@ -9,9 +9,9 @@ const sentimentConfig: Record<
   Sentiment,
   { variant: BadgeProps["variant"]; label: string }
 > = {
-  positive: { variant: "success", label: "Positive" },
-  negative: { variant: "error", label: "Negative" },
-  neutral: { variant: "neutral", label: "Neutral" },
+  positive: { variant: "success", label: "Positif" },
+  negative: { variant: "error", label: "Negatif" },
+  neutral: { variant: "neutral", label: "Netral" },
 };
 
 export function SentimentBadge({
@@ -21,7 +21,7 @@ export function SentimentBadge({
   if (!sentiment) {
     return (
       <Badge variant="neutral" {...props}>
-        Unanalyzed
+        Belum Dianalisis
       </Badge>
     );
   }

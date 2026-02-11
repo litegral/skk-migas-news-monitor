@@ -105,7 +105,7 @@ function SignOutButton() {
       disabled={isLoading}
     >
       <RiLogoutBoxRLine className="size-5 shrink-0" aria-hidden="true" />
-      {isLoading ? "Signing out..." : "Sign out"}
+      {isLoading ? "Keluar..." : "Sign out"}
     </Button>
   );
 }

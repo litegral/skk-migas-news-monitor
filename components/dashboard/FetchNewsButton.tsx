@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * FetchNewsButton triggers fetching from RapidAPI and RSS feeds,
+ * FetchNewsButton triggers fetching from Google News RSS and RSS feeds,
  * then starts background analysis via the AnalysisContext.
  *
  * Safeguards:
@@ -15,9 +15,9 @@ import { useSWRConfig } from "swr";
 
 import { Button } from "@/components/ui/Button";
 import { useAnalysis } from "@/contexts/AnalysisContext";
-import { DASHBOARD_API_KEY } from "@/lib/hooks/useDashboardData";
+import { DASHBOARD_API_BASE } from "@/lib/hooks/useDashboardData";
 
-type FetchStep = "idle" | "rapidapi" | "rss" | "done" | "error";
+type FetchStep = "idle" | "googlenews" | "rss" | "done" | "error";
 
 /** Cooldown duration: 5 minutes in milliseconds */
 const FETCH_COOLDOWN_MS = 5 * 60 * 1000;
@@ -26,11 +26,11 @@ const FETCH_COOLDOWN_MS = 5 * 60 * 1000;
 const LAST_FETCH_KEY = "skkmigas_lastNewsFetchTime";
 
 const stepLabels: Record<FetchStep, string> = {
-  idle: "Fetch News",
-  rapidapi: "Fetching from RapidAPI...",
-  rss: "Fetching RSS feeds...",
-  done: "Done!",
-  error: "Error occurred",
+  idle: "Ambil Berita",
+  googlenews: "Mengambil dari Google News...",
+  rss: "Mengambil RSS feeds...",
+  done: "Selesai!",
+  error: "Terjadi kesalahan",
 };
 
 interface FetchNewsButtonProps {
@@ -119,15 +119,15 @@ export function FetchNewsButton({ onFetchingChange }: Readonly<FetchNewsButtonPr
       return;
     }
 
-    setStep("rapidapi");
+    setStep("googlenews");
     setError(null);
 
     try {
-      // Step 1: Fetch from RapidAPI
-      const rapidApiRes = await fetch("/api/news/rapidapi", { method: "POST" });
-      if (!rapidApiRes.ok) {
-        const data = await rapidApiRes.json();
-        throw new Error(data.error || "Failed to fetch from RapidAPI");
+      // Step 1: Fetch from Google News RSS
+      const googleNewsRes = await fetch("/api/news/googlenews", { method: "POST" });
+      if (!googleNewsRes.ok) {
+        const data = await googleNewsRes.json();
+        throw new Error(data.error || "Failed to fetch from Google News");
       }
 
       // Step 2: Fetch from RSS feeds
@@ -144,12 +144,22 @@ export function FetchNewsButton({ onFetchingChange }: Readonly<FetchNewsButtonPr
       saveFetchTimestamp();
       setCooldownRemaining(FETCH_COOLDOWN_MS);
 
-      // Refresh dashboard data to get updated pending count
-      const dashboardData = await mutate(DASHBOARD_API_KEY);
+      // Refresh all dashboard data by invalidating any key that starts with DASHBOARD_API_BASE
+      // This re-fetches data for all period variants
+      await mutate(
+        (key: string) => typeof key === "string" && key.startsWith(DASHBOARD_API_BASE),
+        undefined,
+        { revalidate: true }
+      );
+
+      // Fetch fresh dashboard data to get pending count
+      const freshRes = await fetch(DASHBOARD_API_BASE);
+      const freshJson = await freshRes.json();
+      const freshPendingCount = freshJson.data?.pendingCount ?? 0;
 
       // Start background analysis if there are pending articles
-      if (dashboardData?.pendingCount && dashboardData.pendingCount > 0 && !isAnalyzing) {
-        startAnalysis(dashboardData.pendingCount);
+      if (freshPendingCount > 0 && !isAnalyzing) {
+        startAnalysis(freshPendingCount);
       }
 
       // Reset button after delay
@@ -199,11 +209,11 @@ export function FetchNewsButton({ onFetchingChange }: Readonly<FetchNewsButtonPr
       return { text: error, type: "error" };
     }
     if (isAnalyzing) {
-      return { text: "Analysis in progress. Please wait.", type: "info" };
+      return { text: "Analisis sedang berlangsung. Mohon tunggu.", type: "info" };
     }
     if (isCooldownActive) {
       return {
-        text: `Cooldown active. Try again in ${formatRemainingTime(cooldownRemaining)}.`,
+        text: `Jeda aktif. Coba lagi dalam ${formatRemainingTime(cooldownRemaining)}.`,
         type: "warning",
       };
     }

@@ -93,7 +93,7 @@ export default async function DashboardPage() {
   // Compute sentiment over time data (group by day)
   const sentimentByDay = new Map<
     string,
-    { Positive: number; Neutral: number; Negative: number }
+    { Positif: number; Netral: number; Negatif: number }
   >();
 
   for (const article of articles) {
@@ -101,14 +101,14 @@ export default async function DashboardPage() {
 
     const day = format(new Date(article.publishedAt), "MMM d");
     const existing = sentimentByDay.get(day) || {
-      Positive: 0,
-      Neutral: 0,
-      Negative: 0,
+      Positif: 0,
+      Netral: 0,
+      Negatif: 0,
     };
 
-    if (article.sentiment === "positive") existing.Positive++;
-    else if (article.sentiment === "neutral") existing.Neutral++;
-    else if (article.sentiment === "negative") existing.Negative++;
+    if (article.sentiment === "positive") existing.Positif++;
+    else if (article.sentiment === "neutral") existing.Netral++;
+    else if (article.sentiment === "negative") existing.Negatif++;
 
     sentimentByDay.set(day, existing);
   }
@@ -118,6 +118,14 @@ export default async function DashboardPage() {
     .map(([date, counts]) => ({ date, ...counts }))
     .reverse()
     .slice(-14); // Last 14 days
+
+  // Compute sentiment pie data from all articles (no period filtering on server)
+  const sentimentPieData = {
+    positive: successfullyAnalyzed.filter((a) => a.sentiment === "positive").length,
+    negative: successfullyAnalyzed.filter((a) => a.sentiment === "negative").length,
+    neutral: successfullyAnalyzed.filter((a) => a.sentiment === "neutral").length,
+    total: successfullyAnalyzed.length,
+  };
 
   // Compute sources ranking
   const sourcesCounts = new Map<string, number>();
@@ -154,6 +162,7 @@ export default async function DashboardPage() {
   // Build initial data for SWR fallback
   const initialData: DashboardData = {
     articles: recentArticles,
+    totalArticles,
     kpiData: {
       totalArticles,
       analyzedCount,
@@ -164,10 +173,12 @@ export default async function DashboardPage() {
       lastUpdated,
     },
     sentimentData,
+    sentimentPieData,
     sourcesData,
     categoryData,
     availableTopics,
     pendingCount,
+    period: "3m", // Default period for server-side render
   };
 
   return <DashboardClient initialData={initialData} />;

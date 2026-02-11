@@ -36,7 +36,7 @@ export function LoginForm() {
       router.push("/dashboard");
       router.refresh();
     } catch {
-      setError("An unexpected error occurred. Please try again.");
+      setError("Terjadi kesalahan yang tidak terduga. Silakan coba lagi.");
     } finally {
       setIsLoading(false);
     }
@@ -79,7 +79,7 @@ export function LoginForm() {
             type="password"
             autoComplete="current-password"
             required
-            placeholder="Enter your password"
+            placeholder="Masukkan kata sandi"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             inputClassName="pl-9"
@@ -104,7 +104,7 @@ export function LoginForm() {
         type="submit"
         className="w-full"
         isLoading={isLoading}
-        loadingText="Signing in..."
+        loadingText="Masuk..."
       >
         Sign in
       </Button>

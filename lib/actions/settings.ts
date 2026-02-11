@@ -338,7 +338,10 @@ export async function deleteSearchQuery(id: string): Promise<ActionResult> {
 // Topics Actions
 // ============================================================================
 
-export async function addTopic(name: string): Promise<ActionResult> {
+export async function addTopic(
+  name: string,
+  keywords: string[] = [],
+): Promise<ActionResult> {
   try {
     // Validate name
     const nameValidation = validateString(name, "Topic name", {
@@ -347,6 +350,25 @@ export async function addTopic(name: string): Promise<ActionResult> {
     });
     if (!nameValidation.valid) {
       return { success: false, error: nameValidation.error };
+    }
+
+    // Validate keywords (max 20 keywords, each max 100 chars)
+    if (!Array.isArray(keywords)) {
+      return { success: false, error: "Keywords must be an array" };
+    }
+    if (keywords.length > 20) {
+      return { success: false, error: "Maximum 20 keywords allowed" };
+    }
+    const validatedKeywords: string[] = [];
+    for (const kw of keywords) {
+      const kwValidation = validateString(kw, "Keyword", {
+        minLength: 1,
+        maxLength: 100,
+      });
+      if (!kwValidation.valid) {
+        return { success: false, error: kwValidation.error };
+      }
+      validatedKeywords.push(kwValidation.value!);
     }
 
     const supabase = await createClient();
@@ -361,6 +383,7 @@ export async function addTopic(name: string): Promise<ActionResult> {
     const { error } = await supabase.from("topics").insert({
       user_id: user.id,
       name: nameValidation.value!,
+      keywords: validatedKeywords,
       enabled: true,
     });
 
@@ -382,7 +405,7 @@ export async function addTopic(name: string): Promise<ActionResult> {
 
 export async function updateTopic(
   id: string,
-  data: { name?: string; enabled?: boolean },
+  data: { name?: string; enabled?: boolean; keywords?: string[] },
 ): Promise<ActionResult> {
   try {
     // Validate ID
@@ -410,6 +433,27 @@ export async function updateTopic(
         return { success: false, error: "Enabled must be a boolean" };
       }
       updateData.enabled = data.enabled;
+    }
+
+    if (data.keywords !== undefined) {
+      if (!Array.isArray(data.keywords)) {
+        return { success: false, error: "Keywords must be an array" };
+      }
+      if (data.keywords.length > 20) {
+        return { success: false, error: "Maximum 20 keywords allowed" };
+      }
+      const validatedKeywords: string[] = [];
+      for (const kw of data.keywords) {
+        const kwValidation = validateString(kw, "Keyword", {
+          minLength: 1,
+          maxLength: 100,
+        });
+        if (!kwValidation.valid) {
+          return { success: false, error: kwValidation.error };
+        }
+        validatedKeywords.push(kwValidation.value!);
+      }
+      updateData.keywords = validatedKeywords;
     }
 
     // Check if there's anything to update

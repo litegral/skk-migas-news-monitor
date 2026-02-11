@@ -1,7 +1,12 @@
 "use client";
 
 import React from "react";
-import { RiFilterLine, RiCloseLine } from "@remixicon/react";
+import {
+  RiFilterLine,
+  RiCloseLine,
+  RiArrowLeftSLine,
+  RiArrowRightSLine,
+} from "@remixicon/react";
 
 import type { Article, Sentiment } from "@/lib/types/news";
 import { Input } from "@/components/ui/Input";
@@ -13,18 +18,28 @@ interface ArticleFeedProps {
   articles: Article[];
   /** List of all available topics for filtering. */
   availableTopics?: string[];
+  /** Number of articles per page (default: 10). */
+  pageSize?: number;
 }
 
 type SortOption = "newest" | "oldest";
 type SentimentFilter = Sentiment | "all";
 
-export function ArticleFeed({ articles, availableTopics = [] }: Readonly<ArticleFeedProps>) {
+/** Default number of articles per page */
+const DEFAULT_PAGE_SIZE = 10;
+
+export function ArticleFeed({
+  articles,
+  availableTopics = [],
+  pageSize = DEFAULT_PAGE_SIZE,
+}: Readonly<ArticleFeedProps>) {
   const [search, setSearch] = React.useState("");
   const [sortBy, setSortBy] = React.useState<SortOption>("newest");
   const [sentimentFilter, setSentimentFilter] =
     React.useState<SentimentFilter>("all");
   const [selectedTopics, setSelectedTopics] = React.useState<string[]>([]);
   const [showFilters, setShowFilters] = React.useState(false);
+  const [currentPage, setCurrentPage] = React.useState(1);
 
   // Derive unique topics from articles if not provided
   const allTopics = React.useMemo(() => {
@@ -78,6 +93,24 @@ export function ArticleFeed({ articles, availableTopics = [] }: Readonly<Article
     return result;
   }, [articles, search, sortBy, sentimentFilter, selectedTopics]);
 
+  // Reset to page 1 when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [search, sortBy, sentimentFilter, selectedTopics]);
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredArticles.length / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedArticles = filteredArticles.slice(startIndex, endIndex);
+
+  // Ensure current page is valid when filtered results change
+  React.useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
   function toggleTopic(topic: string) {
     setSelectedTopics((prev) =>
       prev.includes(topic)
@@ -90,18 +123,61 @@ export function ArticleFeed({ articles, availableTopics = [] }: Readonly<Article
     setSelectedTopics([]);
   }
 
+  function goToPage(page: number) {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+      // Scroll to top of article list
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  // Generate page numbers to display
+  function getPageNumbers(): (number | "ellipsis")[] {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
+    const pages: (number | "ellipsis")[] = [];
+
+    // Always show first page
+    pages.push(1);
+
+    if (currentPage > 3) {
+      pages.push("ellipsis");
+    }
+
+    // Show pages around current page
+    const start = Math.max(2, currentPage - 1);
+    const end = Math.min(totalPages - 1, currentPage + 1);
+
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+
+    if (currentPage < totalPages - 2) {
+      pages.push("ellipsis");
+    }
+
+    // Always show last page
+    if (totalPages > 1) {
+      pages.push(totalPages);
+    }
+
+    return pages;
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* Search and filter bar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
-          <Input
-            type="search"
-            placeholder="Search articles..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full"
-          />
+            <Input
+              type="search"
+              placeholder="Cari artikel..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full"
+            />
         </div>
         <Button
           variant="secondary"
@@ -136,8 +212,8 @@ export function ArticleFeed({ articles, availableTopics = [] }: Readonly<Article
                 onChange={(e) => setSortBy(e.target.value as SortOption)}
                 className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
               >
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
+                <option value="newest">Terbaru dahulu</option>
+                <option value="oldest">Terlama dahulu</option>
               </select>
             </div>
 
@@ -157,10 +233,10 @@ export function ArticleFeed({ articles, availableTopics = [] }: Readonly<Article
                 }
                 className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
               >
-                <option value="all">All</option>
-                <option value="positive">Positive</option>
-                <option value="neutral">Neutral</option>
-                <option value="negative">Negative</option>
+                <option value="all">Semua</option>
+                <option value="positive">Positif</option>
+                <option value="neutral">Netral</option>
+                <option value="negative">Negatif</option>
               </select>
             </div>
           </div>
@@ -178,7 +254,7 @@ export function ArticleFeed({ articles, availableTopics = [] }: Readonly<Article
                     onClick={clearTopicFilters}
                     className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                   >
-                    Clear all
+                    Hapus semua
                   </button>
                 )}
               </div>
@@ -210,25 +286,94 @@ export function ArticleFeed({ articles, availableTopics = [] }: Readonly<Article
 
       {/* Results count */}
       <p className="text-sm text-gray-500 dark:text-gray-400">
-        Showing {filteredArticles.length} of {articles.length} articles
+        Menampilkan {startIndex + 1}-{Math.min(endIndex, filteredArticles.length)} dari {filteredArticles.length} artikel
+        {filteredArticles.length !== articles.length && ` (${articles.length} total)`}
       </p>
 
       {/* Article list */}
       <div className="flex flex-col gap-3">
-        {filteredArticles.length > 0 ? (
-          filteredArticles.map((article) => (
+        {paginatedArticles.length > 0 ? (
+          paginatedArticles.map((article) => (
             <ArticleCard key={article.id ?? article.link} article={article} />
           ))
         ) : (
           <div className="flex h-32 items-center justify-center rounded-md border border-dashed border-gray-300 dark:border-gray-700">
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {articles.length === 0
-                ? "No articles yet. Fetch news to get started."
-                : "No articles match your search criteria."}
+                ? "Belum ada artikel. Ambil berita untuk memulai."
+                : "Tidak ada artikel yang cocok dengan kriteria pencarian."}
             </p>
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <nav
+          className="flex items-center justify-center gap-1"
+          aria-label="Pagination"
+        >
+          {/* Previous button */}
+          <button
+            type="button"
+            onClick={() => goToPage(currentPage - 1)}
+            disabled={currentPage === 1}
+            className={cx(
+              "flex items-center justify-center rounded-md p-2 text-sm transition-colors",
+              currentPage === 1
+                ? "cursor-not-allowed text-gray-300 dark:text-gray-600"
+                : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800",
+            )}
+            aria-label="Halaman sebelumnya"
+          >
+            <RiArrowLeftSLine className="size-5" />
+          </button>
+
+          {/* Page numbers */}
+          {getPageNumbers().map((page, index) =>
+            page === "ellipsis" ? (
+              <span
+                key={`ellipsis-${index}`}
+                className="px-2 text-gray-400 dark:text-gray-500"
+              >
+                ...
+              </span>
+            ) : (
+              <button
+                key={page}
+                type="button"
+                onClick={() => goToPage(page)}
+                className={cx(
+                  "flex size-9 items-center justify-center rounded-md text-sm font-medium transition-colors",
+                  currentPage === page
+                    ? "bg-blue-600 text-white dark:bg-blue-500"
+                    : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800",
+                )}
+                aria-label={`Halaman ${page}`}
+                aria-current={currentPage === page ? "page" : undefined}
+              >
+                {page}
+              </button>
+            ),
+          )}
+
+          {/* Next button */}
+          <button
+            type="button"
+            onClick={() => goToPage(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className={cx(
+              "flex items-center justify-center rounded-md p-2 text-sm transition-colors",
+              currentPage === totalPages
+                ? "cursor-not-allowed text-gray-300 dark:text-gray-600"
+                : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800",
+            )}
+            aria-label="Halaman berikutnya"
+          >
+            <RiArrowRightSLine className="size-5" />
+          </button>
+        </nav>
+      )}
     </div>
   );
 }

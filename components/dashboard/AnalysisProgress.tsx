@@ -34,10 +34,10 @@ export function AnalysisProgress() {
 
       {/* Progress text */}
       <span className="text-sm font-medium">
-        Analyzing... {processed}/{totalPending}
+        Menganalisis... {processed}/{totalPending}
         {failedCount > 0 && (
           <span className="ml-1 text-amber-600 dark:text-amber-400">
-            ({failedCount} failed)
+            ({failedCount} gagal)
           </span>
         )}
       </span>
@@ -51,8 +51,8 @@ export function AnalysisProgress() {
           "hover:bg-blue-100 dark:hover:bg-blue-900",
           "text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200"
         )}
-        aria-label="Stop analysis"
-        title="Stop analysis"
+        aria-label="Hentikan analisis"
+        title="Hentikan analisis"
       >
         <RiCloseLine className="size-4" />
       </button>

@@ -16,16 +16,19 @@ import { useSWRConfig } from "swr";
 
 import { Button } from "@/components/ui/Button";
 import { useAnalysis } from "@/contexts/AnalysisContext";
-import { DASHBOARD_API_KEY, useDashboardData } from "@/lib/hooks/useDashboardData";
+import { DASHBOARD_API_BASE, useDashboardData } from "@/lib/hooks/useDashboardData";
+import type { DashboardPeriod } from "@/lib/types/dashboard";
 
 interface AnalyzeButtonProps {
   /** Whether the fetch button is currently fetching (disables this button) */
   isFetching?: boolean;
+  /** Current period for dashboard filtering */
+  period: DashboardPeriod;
 }
 
-export function AnalyzeButton({ isFetching = false }: Readonly<AnalyzeButtonProps>) {
+export function AnalyzeButton({ isFetching = false, period }: Readonly<AnalyzeButtonProps>) {
   const { mutate } = useSWRConfig();
-  const { data } = useDashboardData();
+  const { data } = useDashboardData({ period });
   const { 
     startAnalysis, 
     isAnalyzing, 
@@ -66,12 +69,17 @@ export function AnalyzeButton({ isFetching = false }: Readonly<AnalyzeButtonProp
         setIsResetting(false);
         
         // Refresh dashboard data to get updated counts
-        await mutate(DASHBOARD_API_KEY);
+        await mutate(
+          (key: string) => typeof key === "string" && key.startsWith(DASHBOARD_API_BASE),
+          undefined,
+          { revalidate: true }
+        );
       }
 
-      // Get the latest pending count after reset
-      const refreshedData = await mutate(DASHBOARD_API_KEY);
-      const newPendingCount = refreshedData?.kpiData?.pendingCount ?? 0;
+      // Get fresh dashboard data to check pending count
+      const freshRes = await fetch(`${DASHBOARD_API_BASE}?period=${period}`);
+      const freshJson = await freshRes.json();
+      const newPendingCount = freshJson.data?.kpiData?.pendingCount ?? 0;
 
       // Start analysis if there are pending articles
       if (newPendingCount > 0) {
@@ -88,12 +96,12 @@ export function AnalyzeButton({ isFetching = false }: Readonly<AnalyzeButtonProp
    */
   function getButtonText(): string {
     if (isResetting) {
-      return "Resetting...";
+      return "Mereset...";
     }
     if (isAnalyzing) {
-      return `Analyzing... ${sessionAnalyzed}/${sessionTotal}`;
+      return `Menganalisis... ${sessionAnalyzed}/${sessionTotal}`;
     }
-    return `Analyze (${analyzedCount}/${targetCount})`;
+    return `Analisis (${analyzedCount}/${targetCount})`;
   }
 
   /**
@@ -101,24 +109,24 @@ export function AnalyzeButton({ isFetching = false }: Readonly<AnalyzeButtonProp
    */
   function getSubtext(): { text: string; type: "info" | "warning" | "success" } | null {
     if (isResetting) {
-      return { text: "Resetting failed articles...", type: "info" };
+      return { text: "Mereset artikel yang gagal...", type: "info" };
     }
     if (isAnalyzing) {
       if (sessionFailed > 0) {
-        return { text: `${sessionFailed} failed so far`, type: "warning" };
+        return { text: `${sessionFailed} gagal sejauh ini`, type: "warning" };
       }
-      return { text: "Processing articles...", type: "info" };
+      return { text: "Memproses artikel...", type: "info" };
     }
     if (hasFailures) {
-      return { text: `${failedCount} failed - Click to retry`, type: "warning" };
+      return { text: `${failedCount} gagal - Klik untuk coba lagi`, type: "warning" };
     }
     if (hasPending) {
-      return { text: `${pendingCount} pending`, type: "info" };
+      return { text: `${pendingCount} menunggu`, type: "info" };
     }
     if (totalArticles === 0) {
-      return { text: "No articles", type: "info" };
+      return { text: "Tidak ada artikel", type: "info" };
     }
-    return { text: "All articles analyzed", type: "success" };
+    return { text: "Semua artikel teranalisis", type: "success" };
   }
 
   const subtext = getSubtext();

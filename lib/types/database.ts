@@ -81,6 +81,8 @@ export interface Database {
           id: string;
           user_id: string;
           name: string;
+          /** Keywords for OR-based article matching. If empty, topic name is used. */
+          keywords: string[];
           enabled: boolean;
           created_at: string;
           updated_at: string;
@@ -89,6 +91,7 @@ export interface Database {
           id?: string;
           user_id?: string;
           name: string;
+          keywords?: string[];
           enabled?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -97,6 +100,7 @@ export interface Database {
           id?: string;
           user_id?: string;
           name?: string;
+          keywords?: string[];
           enabled?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -114,7 +118,7 @@ export interface Database {
           source_name: string | null;
           source_url: string | null;
           published_at: string | null;
-          source_type: "rapidapi" | "rss";
+          source_type: "googlenews" | "rss";
           summary: string | null;
           sentiment: "positive" | "negative" | "neutral" | null;
           categories: string[] | null;
@@ -140,7 +144,7 @@ export interface Database {
           source_name?: string | null;
           source_url?: string | null;
           published_at?: string | null;
-          source_type: "rapidapi" | "rss";
+          source_type: "googlenews" | "rss";
           summary?: string | null;
           sentiment?: "positive" | "negative" | "neutral" | null;
           categories?: string[] | null;

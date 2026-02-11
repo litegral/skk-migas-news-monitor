@@ -10,7 +10,7 @@
 export type Sentiment = "positive" | "negative" | "neutral";
 
 /** Where the article was sourced from. */
-export type SourceType = "rapidapi" | "rss";
+export type SourceType = "googlenews" | "rss";
 
 /**
  * Normalised article shape shared by all data sources.
@@ -74,6 +74,8 @@ export interface SearchQuery {
 export interface Topic {
   id: string;
   name: string;
+  /** Keywords for OR-based matching. If empty, topic name is used. */
+  keywords: string[];
   enabled: boolean;
   createdAt: string;
   updatedAt: string;

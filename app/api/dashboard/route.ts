@@ -3,14 +3,22 @@
  *
  * Returns all dashboard data for the authenticated user.
  * Used by SWR for reactive data fetching and auto-revalidation.
+ *
+ * Query parameters:
+ *   - period: Filter period for chart data (7d, 1m, 3m, 6m, 1y, all). Default: 3m
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { format } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import type { Article } from "@/lib/types/news";
 import type { ArticleRow } from "@/lib/types/database";
 import type { ApiResponse } from "@/lib/types/news";
+import {
+  type DashboardPeriod,
+  DEFAULT_PERIOD,
+  getPeriodCutoffDate,
+} from "@/lib/types/dashboard";
 
 /** KPI data for the dashboard */
 export interface KPIData {
@@ -26,9 +34,9 @@ export interface KPIData {
 /** Sentiment data point for charts */
 export interface SentimentDataPoint {
   date: string;
-  Positive: number;
-  Neutral: number;
-  Negative: number;
+  Positif: number;
+  Netral: number;
+  Negatif: number;
 }
 
 /** Source data for bar list */
@@ -43,15 +51,26 @@ export interface CategoryData {
   count: number;
 }
 
+/** Sentiment pie chart data (server-computed) */
+export interface SentimentPieData {
+  positive: number;
+  negative: number;
+  neutral: number;
+  total: number;
+}
+
 /** Complete dashboard data response */
 export interface DashboardData {
   articles: Article[];
+  totalArticles: number;
   kpiData: KPIData;
   sentimentData: SentimentDataPoint[];
+  sentimentPieData: SentimentPieData;
   sourcesData: SourceData[];
   categoryData: CategoryData[];
   availableTopics: string[];
   pendingCount: number;
+  period: DashboardPeriod;
 }
 
 /** Convert database row to domain Article type */
@@ -79,9 +98,14 @@ function toArticle(row: ArticleRow): Article {
   };
 }
 
-export async function GET(): Promise<NextResponse<ApiResponse<DashboardData>>> {
+export async function GET(request: NextRequest): Promise<NextResponse<ApiResponse<DashboardData>>> {
   try {
     const supabase = await createClient();
+
+    // Parse query parameters
+    const { searchParams } = new URL(request.url);
+    const periodParam = searchParams.get("period") as DashboardPeriod | null;
+    const period: DashboardPeriod = periodParam ?? DEFAULT_PERIOD;
 
     // Authenticate the request
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -107,8 +131,17 @@ export async function GET(): Promise<NextResponse<ApiResponse<DashboardData>>> {
       .order("name", { ascending: true });
 
     const articleRows = articlesData ?? [];
-    const articles = articleRows.map(toArticle);
+    const allArticles = articleRows.map(toArticle);
     const availableTopics = topicsData?.map((t) => t.name) ?? [];
+
+    // Filter articles by period for chart calculations
+    const cutoffDate = getPeriodCutoffDate(period);
+    const articles = cutoffDate
+      ? allArticles.filter((a) => {
+          if (!a.publishedAt) return false;
+          return new Date(a.publishedAt) >= cutoffDate;
+        })
+      : allArticles;
 
     // Compute KPI data
     const totalArticles = articles.length;
@@ -157,7 +190,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<DashboardData>>> {
     // Compute sentiment over time data (group by day)
     const sentimentByDay = new Map<
       string,
-      { Positive: number; Neutral: number; Negative: number }
+      { Positif: number; Netral: number; Negatif: number }
     >();
 
     for (const article of articles) {
@@ -165,25 +198,36 @@ export async function GET(): Promise<NextResponse<ApiResponse<DashboardData>>> {
 
       const day = format(new Date(article.publishedAt), "MMM d");
       const existing = sentimentByDay.get(day) || {
-        Positive: 0,
-        Neutral: 0,
-        Negative: 0,
+        Positif: 0,
+        Netral: 0,
+        Negatif: 0,
       };
 
-      if (article.sentiment === "positive") existing.Positive++;
-      else if (article.sentiment === "neutral") existing.Neutral++;
-      else if (article.sentiment === "negative") existing.Negative++;
+      if (article.sentiment === "positive") existing.Positif++;
+      else if (article.sentiment === "neutral") existing.Netral++;
+      else if (article.sentiment === "negative") existing.Negatif++;
 
       sentimentByDay.set(day, existing);
     }
 
     // Convert to array sorted by date (most recent last for chart)
+    // No longer limiting to 14 days - period filtering handles the range
     const sentimentData: SentimentDataPoint[] = Array.from(
       sentimentByDay.entries(),
     )
       .map(([date, counts]) => ({ date, ...counts }))
-      .reverse()
-      .slice(-14); // Last 14 days
+      .reverse();
+
+    // Compute sentiment pie data from period-filtered articles
+    const analyzedInPeriod = articles.filter(
+      (a) => a.aiProcessed && a.sentiment != null
+    );
+    const sentimentPieData: SentimentPieData = {
+      positive: analyzedInPeriod.filter((a) => a.sentiment === "positive").length,
+      negative: analyzedInPeriod.filter((a) => a.sentiment === "negative").length,
+      neutral: analyzedInPeriod.filter((a) => a.sentiment === "neutral").length,
+      total: analyzedInPeriod.length,
+    };
 
     // Compute sources ranking
     const sourcesCounts = new Map<string, number>();
@@ -214,18 +258,20 @@ export async function GET(): Promise<NextResponse<ApiResponse<DashboardData>>> {
       .sort((a, b) => b.count - a.count)
       .slice(0, 10); // Top 10
 
-    // Return only recent articles for feed (limit to 50)
-    const recentArticles = articles.slice(0, 50);
-
+    // Return all period-filtered articles for the feed
+    // (ArticleFeed component handles pagination client-side)
     return NextResponse.json({
       data: {
-        articles: recentArticles,
+        articles,
+        totalArticles: allArticles.length,
         kpiData,
         sentimentData,
+        sentimentPieData,
         sourcesData,
         categoryData,
         availableTopics,
         pendingCount,
+        period,
       },
       error: null,
     });

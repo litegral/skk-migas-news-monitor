@@ -9,14 +9,18 @@
 import React from "react";
 import { useDashboardData } from "@/lib/hooks/useDashboardData";
 import type { DashboardData } from "@/app/api/dashboard/route";
+import type { DashboardPeriod } from "@/lib/types/dashboard";
+import { DEFAULT_PERIOD } from "@/lib/types/dashboard";
 
 import { KPICards } from "@/components/dashboard/KPICards";
 import { SentimentChart } from "@/components/dashboard/SentimentChart";
+import { SentimentPieChart } from "@/components/dashboard/SentimentPieChart";
 import { SourcesBarList } from "@/components/dashboard/SourcesBarList";
 import { CategoryChart } from "@/components/dashboard/CategoryChart";
 import { AnalyzeButton } from "@/components/dashboard/AnalyzeButton";
 import { FetchNewsButton } from "@/components/dashboard/FetchNewsButton";
 import { AnalysisProgress } from "@/components/dashboard/AnalysisProgress";
+import { PeriodSelector } from "@/components/dashboard/PeriodSelector";
 import { ArticleFeed } from "@/components/news/ArticleFeed";
 import { Card } from "@/components/ui/Card";
 
@@ -25,11 +29,16 @@ interface DashboardClientProps {
 }
 
 export function DashboardClient({ initialData }: Readonly<DashboardClientProps>) {
-  // Use SWR with server-rendered initial data as fallback
-  const { data } = useDashboardData(initialData);
-  
+  // Period state for filtering dashboard data
+  const [period, setPeriod] = React.useState<DashboardPeriod>(
+    initialData.period ?? DEFAULT_PERIOD
+  );
+
   // Track fetch state to disable analyze button during fetch
   const [isFetching, setIsFetching] = React.useState(false);
+
+  // Use SWR with period parameter
+  const { data } = useDashboardData({ period, fallbackData: initialData });
 
   // Use SWR data if available, otherwise fall back to initial data
   const dashboardData = data ?? initialData;
@@ -43,22 +52,27 @@ export function DashboardClient({ initialData }: Readonly<DashboardClientProps>)
             Dashboard
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            News monitoring overview for SKK Migas Kalsul.
+            Ringkasan pemantauan berita untuk SKK Migas Kalsul.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-start gap-3">
           <AnalysisProgress />
-          <AnalyzeButton isFetching={isFetching} />
+          <PeriodSelector value={period} onChange={setPeriod} />
+          <AnalyzeButton isFetching={isFetching} period={period} />
           <FetchNewsButton onFetchingChange={setIsFetching} />
         </div>
       </div>
 
       {/* KPI cards */}
-      <KPICards data={dashboardData.kpiData} />
+      <KPICards
+        articles={dashboardData.articles}
+        totalArticles={dashboardData.kpiData.totalArticles}
+      />
 
-      {/* Charts row */}
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <SentimentChart data={dashboardData.sentimentData} />
+      {/* Charts row - 3 columns on large screens */}
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <SentimentChart data={dashboardData.sentimentData} period={period} />
+        <SentimentPieChart data={dashboardData.sentimentPieData} period={period} />
         <SourcesBarList data={dashboardData.sourcesData} />
       </div>
 
@@ -71,10 +85,10 @@ export function DashboardClient({ initialData }: Readonly<DashboardClientProps>)
       <div className="mt-6">
         <Card>
           <h2 className="text-sm font-medium text-gray-900 dark:text-gray-50">
-            Recent Articles
+            Artikel Terbaru
           </h2>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Latest news from all sources
+            Berita terbaru dari semua sumber
           </p>
           <div className="mt-4">
             <ArticleFeed

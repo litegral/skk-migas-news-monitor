@@ -7,8 +7,10 @@
 
 import useSWR from "swr";
 import type { DashboardData } from "@/app/api/dashboard/route";
+import type { DashboardPeriod } from "@/lib/types/dashboard";
+import { DEFAULT_PERIOD } from "@/lib/types/dashboard";
 
-const DASHBOARD_API_KEY = "/api/dashboard";
+const DASHBOARD_API_BASE = "/api/dashboard";
 
 async function fetcher(url: string): Promise<DashboardData> {
   const res = await fetch(url);
@@ -27,8 +29,18 @@ async function fetcher(url: string): Promise<DashboardData> {
   return json.data;
 }
 
-export function useDashboardData(fallbackData?: DashboardData) {
-  return useSWR<DashboardData>(DASHBOARD_API_KEY, fetcher, {
+interface UseDashboardDataOptions {
+  period?: DashboardPeriod;
+  fallbackData?: DashboardData;
+}
+
+export function useDashboardData(options: UseDashboardDataOptions = {}) {
+  const { period = DEFAULT_PERIOD, fallbackData } = options;
+
+  // Build the SWR key with period parameter
+  const swrKey = `${DASHBOARD_API_BASE}?period=${period}`;
+
+  return useSWR<DashboardData>(swrKey, fetcher, {
     fallbackData,
     revalidateOnFocus: false,
     dedupingInterval: 5000,
@@ -37,5 +49,5 @@ export function useDashboardData(fallbackData?: DashboardData) {
   });
 }
 
-/** Export the key for manual mutations */
-export { DASHBOARD_API_KEY };
+/** Export the base key for manual mutations */
+export { DASHBOARD_API_BASE };

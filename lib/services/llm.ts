@@ -33,36 +33,37 @@ export interface AnalysisResponse {
 
 /**
  * System prompt that instructs the LLM to return structured JSON analysis.
+ * Categories are in Indonesian for Indonesian users.
  */
 const SYSTEM_PROMPT = `You are a professional news analyst for the Indonesian oil & gas sector, specifically monitoring news relevant to SKK Migas (Special Task Force for Upstream Oil and Gas Business Activities) and the Kalimantan-Sulawesi (Kalsul) region.
 
 Analyze the provided news article and return a JSON object with exactly these fields:
 
-1. "summary": A concise 2-3 sentence summary in the same language as the article. Focus on the key facts, who is involved, and the impact on the oil & gas sector.
+1. "summary": A concise 2-3 sentence summary in Indonesian. Focus on the key facts, who is involved, and the impact on the oil & gas sector.
 
 2. "sentiment": Exactly one of "positive", "negative", or "neutral".
    - "positive": Good news for SKK Migas, oil/gas sector, economic growth, new discoveries, increased production, successful projects.
    - "negative": Bad news like accidents, environmental issues, production decline, regulatory problems, corruption, protests.
    - "neutral": Factual reporting, policy updates, routine announcements without clear positive/negative impact.
 
-3. "categories": An array of 1-4 relevant category labels from this list:
-   - "Production" (output, lifting, targets)
-   - "Exploration" (new blocks, discoveries, surveys)
-   - "Regulation" (policy, compliance, government decisions)
-   - "Investment" (funding, contracts, partnerships)
-   - "Environment" (environmental impact, sustainability, spills)
-   - "Infrastructure" (pipelines, refineries, facilities)
-   - "Safety" (accidents, incidents, HSE)
-   - "Personnel" (appointments, workforce, organizational changes)
-   - "Market" (pricing, supply/demand, trade)
-   - "Community" (social impact, CSR, local engagement)
-   - "Technology" (innovation, digital transformation)
-   - "General" (other/miscellaneous)
+3. "categories": An array of 1-4 relevant category labels from this list (use these exact Indonesian labels):
+   - "Produksi" (output, lifting, target produksi)
+   - "Eksplorasi" (blok baru, penemuan, survei)
+   - "Regulasi" (kebijakan, kepatuhan, keputusan pemerintah)
+   - "Investasi" (pendanaan, kontrak, kemitraan)
+   - "Lingkungan" (dampak lingkungan, keberlanjutan, tumpahan minyak)
+   - "Infrastruktur" (pipa, kilang, fasilitas)
+   - "Keselamatan" (kecelakaan, insiden, K3/HSE)
+   - "Personel" (penunjukan, tenaga kerja, perubahan organisasi)
+   - "Pasar" (harga, penawaran/permintaan, perdagangan)
+   - "Komunitas" (dampak sosial, CSR, keterlibatan masyarakat)
+   - "Teknologi" (inovasi, transformasi digital)
+   - "Umum" (lain-lain)
 
 Return ONLY valid JSON. No markdown formatting, no code fences, no explanations outside the JSON.
 
 Example output:
-{"summary":"SKK Migas melaporkan peningkatan produksi minyak mentah sebesar 5% di wilayah Kalimantan Timur selama Q1 2026. Peningkatan ini didorong oleh keberhasilan program enhanced oil recovery di beberapa blok migas.","sentiment":"positive","categories":["Production","Technology"]}`;
+{"summary":"SKK Migas melaporkan peningkatan produksi minyak mentah sebesar 5% di wilayah Kalimantan Timur selama Q1 2026. Peningkatan ini didorong oleh keberhasilan program enhanced oil recovery di beberapa blok migas.","sentiment":"positive","categories":["Produksi","Teknologi"]}`;
 
 /**
  * Analyze a single article using the SiliconFlow LLM.
@@ -194,21 +195,21 @@ function buildUserPrompt(input: {
 const VALID_SENTIMENTS = new Set<Sentiment>(["positive", "negative", "neutral"]);
 
 /**
- * Valid category values for validation.
+ * Valid category values for validation (Indonesian).
  */
 const VALID_CATEGORIES = new Set([
-  "Production",
-  "Exploration",
-  "Regulation",
-  "Investment",
-  "Environment",
-  "Infrastructure",
-  "Safety",
-  "Personnel",
-  "Market",
-  "Community",
-  "Technology",
-  "General",
+  "Produksi",
+  "Eksplorasi",
+  "Regulasi",
+  "Investasi",
+  "Lingkungan",
+  "Infrastruktur",
+  "Keselamatan",
+  "Personel",
+  "Pasar",
+  "Komunitas",
+  "Teknologi",
+  "Umum",
 ]);
 
 /**
@@ -248,9 +249,9 @@ function parseAnalysisResponse(raw: string): AnalysisResult | null {
       .filter((c): c is string => typeof c === "string")
       .filter((c) => VALID_CATEGORIES.has(c));
 
-    // If no valid categories, default to "General".
+    // If no valid categories, default to "Umum" (General).
     if (categories.length === 0) {
-      categories.push("General");
+      categories.push("Umum");
     }
 
     return { summary, sentiment, categories };
