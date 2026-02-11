@@ -3,10 +3,15 @@
  *
  * Fetches and parses RSS/Atom feeds using the `rss-parser` library,
  * then normalizes each item into the app's `Article` shape.
+ *
+ * HARDENED: Includes URL validation, retry logic, and proper error returns.
  */
 
 import Parser from "rss-parser";
 import type { Article } from "@/lib/types/news";
+import { validateUrl } from "@/lib/utils/validateUrl";
+import { withRetry } from "@/lib/utils/withRetry";
+import { validateString } from "@/lib/utils/validateInput";
 
 /**
  * Reusable parser instance. `rss-parser` is stateless per-parse,
@@ -46,28 +51,70 @@ interface RSSItem {
   mediaThumbnail?: { $?: { url?: string } };
 }
 
+/** Result type for fetchRSSFeedArticles */
+export interface RSSFetchResult {
+  data: Article[];
+  error: string | null;
+}
+
 /**
  * Fetch and parse a single RSS feed, returning normalised `Article` objects.
  *
  * @param feedUrl  - The RSS/Atom feed URL.
  * @param feedName - Human-readable feed name (used as `sourceName`).
- * @returns Array of normalised articles. Empty array on failure.
+ * @returns Result object with data array and optional error message.
  */
 export async function fetchRSSFeedArticles(
   feedUrl: string,
   feedName: string,
-): Promise<Article[]> {
-  try {
-    const feed = await parser.parseURL(feedUrl);
+): Promise<RSSFetchResult> {
+  // Validate URL
+  const urlValidation = validateUrl(feedUrl);
+  if (!urlValidation.valid) {
+    return { data: [], error: `Invalid URL: ${urlValidation.error}` };
+  }
+  const validatedUrl = urlValidation.normalizedUrl!;
 
-    return (feed.items as RSSItem[])
+  // Validate feed name
+  const nameValidation = validateString(feedName, "Feed name", {
+    minLength: 1,
+    maxLength: 100,
+  });
+  if (!nameValidation.valid) {
+    return { data: [], error: nameValidation.error! };
+  }
+  const validatedName = nameValidation.value!;
+
+  try {
+    const feed = await withRetry(
+      async () => {
+        return await parser.parseURL(validatedUrl);
+      },
+      {
+        maxRetries: 3,
+        initialDelayMs: 1000,
+        backoffMultiplier: 2,
+        onRetry: (error, attempt, delayMs) => {
+          console.warn(
+            `[rss] Attempt ${attempt} failed for "${validatedName}" (${validatedUrl}), retrying in ${delayMs}ms:`,
+            error instanceof Error ? error.message : error
+          );
+        },
+      }
+    );
+
+    const articles = (feed.items as RSSItem[])
       .filter((item): item is RSSItem & { title: string; link: string } =>
         Boolean(item.title && item.link),
       )
-      .map((item) => normalizeItem(item, feedName, feedUrl));
+      .map((item) => normalizeItem(item, validatedName, validatedUrl));
+
+    console.log(`[rss] Fetched ${articles.length} articles from "${validatedName}"`);
+    return { data: articles, error: null };
   } catch (err) {
-    console.error(`[rss] Failed to parse feed "${feedName}" (${feedUrl}):`, err);
-    return [];
+    const errorMsg = err instanceof Error ? err.message : "Unknown error occurred";
+    console.error(`[rss] Failed to parse feed "${validatedName}" (${validatedUrl}):`, errorMsg);
+    return { data: [], error: errorMsg };
   }
 }
 
@@ -92,6 +139,7 @@ function normalizeItem(
     sentiment: null,
     categories: null,
     aiProcessed: false,
+    matchedTopics: [], // Will be populated by filterArticlesByTopics
   };
 }
 
@@ -146,4 +194,63 @@ function normalizeDate(raw?: string): string | null {
   if (!raw) return null;
   const date = new Date(raw);
   return isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+// ============================================================================
+// Topic Filtering
+// ============================================================================
+
+export interface TopicForFiltering {
+  name: string;
+}
+
+/**
+ * Filter articles to keep only those that match at least one topic.
+ * Matching is case-insensitive substring search in title and snippet.
+ *
+ * @param articles - Array of articles to filter.
+ * @param topics - Array of topics to match against.
+ * @returns Filtered articles with matched_topics field populated.
+ */
+export function filterArticlesByTopics(
+  articles: Article[],
+  topics: TopicForFiltering[],
+): Article[] {
+  if (topics.length === 0) {
+    console.warn("[rss] No topics provided for filtering, returning empty array");
+    return [];
+  }
+
+  const filteredArticles: Article[] = [];
+
+  for (const article of articles) {
+    const matchedTopics: string[] = [];
+
+    // Combine searchable text (title + snippet)
+    const searchableText = [
+      article.title,
+      article.snippet ?? "",
+    ].join(" ").toLowerCase();
+
+    // Check each topic
+    for (const topic of topics) {
+      const topicLower = topic.name.toLowerCase();
+
+      // Case-insensitive substring match
+      if (searchableText.includes(topicLower)) {
+        matchedTopics.push(topic.name);
+      }
+    }
+
+    // Only include articles that matched at least one topic
+    if (matchedTopics.length > 0) {
+      filteredArticles.push({
+        ...article,
+        matchedTopics,
+      });
+    }
+  }
+
+  console.log(`[rss] Filtered ${articles.length} articles down to ${filteredArticles.length} matching topics`);
+  return filteredArticles;
 }

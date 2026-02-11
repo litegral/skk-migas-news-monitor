@@ -35,6 +35,20 @@ export interface Article {
   sentiment: Sentiment | null;
   categories: string[] | null;
   aiProcessed: boolean;
+
+  /** Error tracking for AI analysis failures. */
+  aiError?: string | null;
+  aiProcessedAt?: string | null;
+
+  /** Full crawled article content (from Crawl4AI). */
+  fullContent?: string | null;
+
+  /** Array of topic names that this article matched against. */
+  matchedTopics?: string[];
+
+  /** Timestamps from database. */
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 /** A user-configured RSS feed source. */
@@ -51,6 +65,15 @@ export interface RSSFeed {
 export interface SearchQuery {
   id: string;
   query: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A user-configured topic for filtering articles. */
+export interface Topic {
+  id: string;
+  name: string;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;

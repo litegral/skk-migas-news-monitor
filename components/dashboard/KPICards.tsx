@@ -1,6 +1,7 @@
 import {
   RiArticleLine,
   RiBarChartBoxLine,
+  RiCheckDoubleLine,
   RiEmotionLine,
   RiTimeLine,
 } from "@remixicon/react";
@@ -11,6 +12,9 @@ import { cx } from "@/lib/utils";
 
 export interface KPIData {
   totalArticles: number;
+  analyzedCount: number;  // Successfully analyzed (has summary)
+  failedCount: number;    // Failed analysis (has ai_error)
+  pendingCount: number;   // Not yet processed
   positivePercent: number;
   activeSources: number;
   lastUpdated: string | null;
@@ -34,6 +38,13 @@ export function KPICards({ data }: Readonly<KPICardsProps>) {
       color: "blue",
     },
     {
+      name: "Analyzed",
+      value: `${data.analyzedCount}/${data.totalArticles}`,
+      icon: RiCheckDoubleLine,
+      description: "Articles processed by AI",
+      color: "cyan",
+    },
+    {
       name: "Positive Sentiment",
       value: `${data.positivePercent}%`,
       icon: RiEmotionLine,
@@ -44,20 +55,21 @@ export function KPICards({ data }: Readonly<KPICardsProps>) {
       name: "Sources Active",
       value: data.activeSources.toLocaleString(),
       icon: RiBarChartBoxLine,
-      description: "RSS + API sources",
+      description: "Publishers with matching topics",
       color: "violet",
     },
     {
       name: "Last Updated",
       value: lastUpdatedText,
       icon: RiTimeLine,
-      description: "Most recent fetch",
+      description: "Most recent article",
       color: "amber",
     },
   ] as const;
 
   const colorClasses = {
     blue: "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400",
+    cyan: "bg-cyan-50 text-cyan-600 dark:bg-cyan-500/10 dark:text-cyan-400",
     emerald:
       "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
     violet:
@@ -66,7 +78,7 @@ export function KPICards({ data }: Readonly<KPICardsProps>) {
   } as const;
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
       {kpis.map((kpi) => (
         <Card key={kpi.name}>
           <div className="flex items-center gap-3">

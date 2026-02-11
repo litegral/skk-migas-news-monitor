@@ -817,9 +817,8 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>(
               const categoryId = `${areaId}-${category.replace(/[^a-zA-Z0-9]/g, "")}`;
               return (
                 <React.Fragment key={category}>
-                  <defs key={category}>
+                  <defs>
                     <linearGradient
-                      key={category}
                       className={cx(
                         getColorClassName(
                           categoryColors.get(

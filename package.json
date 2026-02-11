@@ -30,10 +30,12 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "next": "16.1.6",
+    "p-limit": "^7.3.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.7.0",
     "rss-parser": "^3.13.0",
+    "swr": "^2.4.0",
     "tailwind-merge": "^3.4.0",
     "tailwind-variants": "^3.2.2"
   },

@@ -1,11 +1,12 @@
 import Image from "next/image";
 import { formatDistanceToNow } from "date-fns";
-import { RiExternalLinkLine } from "@remixicon/react";
+import { RiExternalLinkLine, RiHashtag } from "@remixicon/react";
 
 import type { Article } from "@/lib/types/news";
 import { Card } from "@/components/ui/Card";
 import { SentimentBadge } from "./SentimentBadge";
 import { CategoryBadge } from "./CategoryBadge";
+import { cx } from "@/lib/utils";
 
 interface ArticleCardProps {
   article: Article;
@@ -70,7 +71,30 @@ export function ArticleCard({ article }: Readonly<ArticleCardProps>) {
           {article.summary || article.snippet || "No description available."}
         </p>
 
-        {/* Badges */}
+        {/* Matched topics */}
+        {article.matchedTopics && article.matchedTopics.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <RiHashtag className="size-3 text-gray-400" />
+            {article.matchedTopics.slice(0, 3).map((topic) => (
+              <span
+                key={topic}
+                className={cx(
+                  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                  "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+                )}
+              >
+                {topic}
+              </span>
+            ))}
+            {article.matchedTopics.length > 3 && (
+              <span className="text-xs text-gray-400">
+                +{article.matchedTopics.length - 3} more
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Sentiment and category badges */}
         <div className="flex flex-wrap items-center gap-2">
           <SentimentBadge sentiment={article.sentiment} />
           {article.categories?.slice(0, 3).map((category) => (

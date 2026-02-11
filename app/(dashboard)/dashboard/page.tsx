@@ -4,23 +4,8 @@ import { format } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import type { Article } from "@/lib/types/news";
 import type { ArticleRow } from "@/lib/types/database";
-
-import { KPICards, type KPIData } from "@/components/dashboard/KPICards";
-import {
-  SentimentChart,
-  type SentimentDataPoint,
-} from "@/components/dashboard/SentimentChart";
-import {
-  SourcesBarList,
-  type SourceData,
-} from "@/components/dashboard/SourcesBarList";
-import {
-  CategoryChart,
-  type CategoryData,
-} from "@/components/dashboard/CategoryChart";
-import { FetchNewsButton } from "@/components/dashboard/FetchNewsButton";
-import { ArticleFeed } from "@/components/news/ArticleFeed";
-import { Card } from "@/components/ui/Card";
+import type { DashboardData } from "@/app/api/dashboard/route";
+import { DashboardClient } from "@/components/dashboard/DashboardClient";
 
 export const metadata: Metadata = {
   title: "Dashboard - SKK Migas News Monitor",
@@ -42,6 +27,12 @@ function toArticle(row: ArticleRow): Article {
     sentiment: row.sentiment,
     categories: row.categories,
     aiProcessed: row.ai_processed,
+    aiError: row.ai_error,
+    aiProcessedAt: row.ai_processed_at,
+    fullContent: row.full_content,
+    matchedTopics: row.matched_topics ?? [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -54,18 +45,40 @@ export default async function DashboardPage() {
     .select("*")
     .order("published_at", { ascending: false });
 
+  // Fetch enabled topics for filtering
+  const { data: topicsData } = await supabase
+    .from("topics")
+    .select("name")
+    .eq("enabled", true)
+    .order("name", { ascending: true });
+
   const articleRows = articlesData ?? [];
   const articles = articleRows.map(toArticle);
+  const availableTopics = topicsData?.map((t) => t.name) ?? [];
 
   // Compute KPI data
   const totalArticles = articles.length;
-  const analyzedArticles = articles.filter((a) => a.aiProcessed);
-  const positiveCount = analyzedArticles.filter(
+  
+  // Successfully analyzed: ai_processed = true AND has summary (no error)
+  const successfullyAnalyzed = articles.filter(
+    (a) => a.aiProcessed && a.summary != null
+  );
+  const analyzedCount = successfullyAnalyzed.length;
+  
+  // Failed: ai_processed = true AND has ai_error (no summary)
+  const failedCount = articles.filter(
+    (a) => a.aiProcessed && a.aiError != null
+  ).length;
+  
+  // Pending: not yet processed
+  const pendingCount = articles.filter((a) => !a.aiProcessed).length;
+
+  const positiveCount = successfullyAnalyzed.filter(
     (a) => a.sentiment === "positive",
   ).length;
   const positivePercent =
-    analyzedArticles.length > 0
-      ? Math.round((positiveCount / analyzedArticles.length) * 100)
+    successfullyAnalyzed.length > 0
+      ? Math.round((positiveCount / successfullyAnalyzed.length) * 100)
       : 0;
 
   // Count unique sources
@@ -76,13 +89,6 @@ export default async function DashboardPage() {
 
   // Last updated
   const lastUpdated = articles.length > 0 ? articles[0].publishedAt : null;
-
-  const kpiData: KPIData = {
-    totalArticles,
-    positivePercent,
-    activeSources,
-    lastUpdated,
-  };
 
   // Compute sentiment over time data (group by day)
   const sentimentByDay = new Map<
@@ -108,9 +114,7 @@ export default async function DashboardPage() {
   }
 
   // Convert to array sorted by date (most recent last for chart)
-  const sentimentData: SentimentDataPoint[] = Array.from(
-    sentimentByDay.entries(),
-  )
+  const sentimentData = Array.from(sentimentByDay.entries())
     .map(([date, counts]) => ({ date, ...counts }))
     .reverse()
     .slice(-14); // Last 14 days
@@ -125,7 +129,7 @@ export default async function DashboardPage() {
     );
   }
 
-  const sourcesData: SourceData[] = Array.from(sourcesCounts.entries())
+  const sourcesData = Array.from(sourcesCounts.entries())
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 10); // Top 10
@@ -139,7 +143,7 @@ export default async function DashboardPage() {
     }
   }
 
-  const categoryData: CategoryData[] = Array.from(categoryCounts.entries())
+  const categoryData = Array.from(categoryCounts.entries())
     .map(([category, count]) => ({ category, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 10); // Top 10
@@ -147,49 +151,24 @@ export default async function DashboardPage() {
   // Recent articles for feed (limit to 50)
   const recentArticles = articles.slice(0, 50);
 
-  return (
-    <>
-      {/* Page header */}
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-50">
-            Dashboard
-          </h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            News monitoring overview for SKK Migas Kalsul.
-          </p>
-        </div>
-        <FetchNewsButton />
-      </div>
+  // Build initial data for SWR fallback
+  const initialData: DashboardData = {
+    articles: recentArticles,
+    kpiData: {
+      totalArticles,
+      analyzedCount,
+      failedCount,
+      pendingCount,
+      positivePercent,
+      activeSources,
+      lastUpdated,
+    },
+    sentimentData,
+    sourcesData,
+    categoryData,
+    availableTopics,
+    pendingCount,
+  };
 
-      {/* KPI cards */}
-      <KPICards data={kpiData} />
-
-      {/* Charts row */}
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <SentimentChart data={sentimentData} />
-        <SourcesBarList data={sourcesData} />
-      </div>
-
-      {/* Category chart */}
-      <div className="mt-6">
-        <CategoryChart data={categoryData} />
-      </div>
-
-      {/* Article feed */}
-      <div className="mt-6">
-        <Card>
-          <h2 className="text-sm font-medium text-gray-900 dark:text-gray-50">
-            Recent Articles
-          </h2>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Latest news from all sources
-          </p>
-          <div className="mt-4">
-            <ArticleFeed articles={recentArticles} />
-          </div>
-        </Card>
-      </div>
-    </>
-  );
+  return <DashboardClient initialData={initialData} />;
 }

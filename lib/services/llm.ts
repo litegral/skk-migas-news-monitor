@@ -5,17 +5,30 @@
  * to generate summaries, sentiment labels, and categories for articles.
  *
  * Model: meta-llama/Llama-3.3-70B-Instruct (configurable via SILICONFLOW_MODEL).
+ *
+ * HARDENED: Includes timeout (60s), retry with exponential backoff, and proper error returns.
  */
 
 import type { Sentiment } from "@/lib/types/news";
+import { fetchWithTimeout, FetchTimeoutError } from "@/lib/utils/fetchWithTimeout";
+import { withRetry } from "@/lib/utils/withRetry";
 
-const API_BASE = "https://api.siliconflow.cn/v1";
+const API_BASE = process.env.SILICONFLOW_API_BASE || "https://api.siliconflow.com/v1";
+
+/** Timeout for LLM requests (60 seconds - LLM calls are slower) */
+const REQUEST_TIMEOUT_MS = 60_000;
 
 /** Result shape returned by `analyzeArticle`. */
 export interface AnalysisResult {
   summary: string;
   sentiment: Sentiment;
   categories: string[];
+}
+
+/** Result type for analyzeArticle with error handling */
+export interface AnalysisResponse {
+  data: AnalysisResult | null;
+  error: string | null;
 }
 
 /**
@@ -57,63 +70,102 @@ Example output:
  * @param input.title    - Article title.
  * @param input.snippet  - Short snippet/description.
  * @param input.content  - Full article content (from Crawl4AI), if available.
- * @returns Analysis result, or null if the LLM call fails.
+ * @returns Analysis response with data and optional error.
  */
 export async function analyzeArticle(input: {
   title: string;
   snippet: string | null;
   content: string | null;
-}): Promise<AnalysisResult | null> {
+}): Promise<AnalysisResponse> {
   const apiKey = process.env.SILICONFLOW_API_KEY;
-  const model = process.env.SILICONFLOW_MODEL || "meta-llama/Llama-3.3-70B-Instruct";
+  const model = process.env.SILICONFLOW_MODEL || "meta-llama/Meta-Llama-3.1-8B-Instruct";
 
   if (!apiKey) {
     console.error("[llm] SILICONFLOW_API_KEY is not set");
-    return null;
+    return { data: null, error: "SiliconFlow API key is not configured" };
+  }
+
+  // Validate title
+  if (!input.title || input.title.trim().length === 0) {
+    return { data: null, error: "Article title is required" };
   }
 
   // Build the user prompt with available content.
   const userPrompt = buildUserPrompt(input);
 
   try {
-    const response = await fetch(`${API_BASE}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+    const result = await withRetry(
+      async () => {
+        const response = await fetchWithTimeout(`${API_BASE}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              { role: "user", content: userPrompt },
+            ],
+            temperature: 0.3,
+            max_tokens: 512,
+            response_format: { type: "json_object" },
+          }),
+          cache: "no-store",
+          timeoutMs: REQUEST_TIMEOUT_MS,
+        });
+
+        if (!response.ok) {
+          const errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+          console.error(`[llm] SiliconFlow ${errorMsg}`);
+          throw new Error(errorMsg);
+        }
+
+        return response;
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 512,
-        response_format: { type: "json_object" },
-      }),
-      cache: "no-store",
-    });
+      {
+        maxRetries: 3,
+        initialDelayMs: 2000, // Longer initial delay for LLM
+        backoffMultiplier: 2,
+        maxDelayMs: 30000,
+        onRetry: (error, attempt, delayMs) => {
+          console.warn(
+            `[llm] Attempt ${attempt} failed, retrying in ${delayMs}ms:`,
+            error instanceof Error ? error.message : error
+          );
+        },
+      }
+    );
 
-    if (!response.ok) {
-      console.error(
-        `[llm] SiliconFlow HTTP ${response.status}: ${response.statusText}`,
-      );
-      return null;
-    }
-
-    const json = await response.json();
+    const json = await result.json();
     const raw = json.choices?.[0]?.message?.content;
 
     if (!raw) {
       console.error("[llm] Empty response from SiliconFlow");
-      return null;
+      return { data: null, error: "Empty response from LLM" };
     }
 
-    return parseAnalysisResponse(raw);
+    const analysisResult = parseAnalysisResponse(raw);
+    if (!analysisResult) {
+      return { data: null, error: "Failed to parse LLM response" };
+    }
+
+    console.log(`[llm] Successfully analyzed: "${input.title.slice(0, 50)}..."`);
+    return { data: analysisResult, error: null };
   } catch (err) {
-    console.error("[llm] SiliconFlow request failed:", err);
-    return null;
+    let errorMsg: string;
+
+    if (err instanceof FetchTimeoutError) {
+      errorMsg = `Request timed out after ${REQUEST_TIMEOUT_MS}ms`;
+    } else if (err instanceof Error) {
+      errorMsg = err.message;
+    } else {
+      errorMsg = "Unknown error occurred";
+    }
+
+    console.error(`[llm] Analysis failed for "${input.title}":`, errorMsg);
+    return { data: null, error: errorMsg };
   }
 }
 

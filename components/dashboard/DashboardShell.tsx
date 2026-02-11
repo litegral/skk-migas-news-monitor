@@ -3,6 +3,7 @@
 import React from "react";
 
 import { SidebarProvider, useSidebar } from "@/lib/contexts/SidebarContext";
+import { AnalysisProvider } from "@/contexts/AnalysisContext";
 import { Sidebar, MobileHeader, SidebarExpandButton } from "./Sidebar";
 import { cx } from "@/lib/utils";
 
@@ -49,7 +50,9 @@ function DashboardShellInner({ children }: Readonly<DashboardShellProps>) {
 export function DashboardShell({ children }: Readonly<DashboardShellProps>) {
   return (
     <SidebarProvider>
-      <DashboardShellInner>{children}</DashboardShellInner>
+      <AnalysisProvider>
+        <DashboardShellInner>{children}</DashboardShellInner>
+      </AnalysisProvider>
     </SidebarProvider>
   );
 }
