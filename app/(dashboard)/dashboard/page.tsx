@@ -1,114 +1,192 @@
 import type { Metadata } from "next";
+import { format } from "date-fns";
+
+import { createClient } from "@/lib/supabase/server";
+import type { Article } from "@/lib/types/news";
+import type { ArticleRow } from "@/lib/types/database";
+
+import { KPICards, type KPIData } from "@/components/dashboard/KPICards";
 import {
-  RiArticleLine,
-  RiBarChartBoxLine,
-  RiEmotionLine,
-  RiTimeLine,
-} from "@remixicon/react";
+  SentimentChart,
+  type SentimentDataPoint,
+} from "@/components/dashboard/SentimentChart";
+import {
+  SourcesBarList,
+  type SourceData,
+} from "@/components/dashboard/SourcesBarList";
+import {
+  CategoryChart,
+  type CategoryData,
+} from "@/components/dashboard/CategoryChart";
+import { FetchNewsButton } from "@/components/dashboard/FetchNewsButton";
+import { ArticleFeed } from "@/components/news/ArticleFeed";
 import { Card } from "@/components/ui/Card";
 
 export const metadata: Metadata = {
   title: "Dashboard - SKK Migas News Monitor",
 };
 
-const placeholderKPIs = [
-  {
-    name: "Total Articles",
-    value: "--",
-    icon: RiArticleLine,
-    description: "Articles collected",
-  },
-  {
-    name: "Positive Sentiment",
-    value: "--%",
-    icon: RiEmotionLine,
-    description: "Of analysed articles",
-  },
-  {
-    name: "Sources Active",
-    value: "--",
-    icon: RiBarChartBoxLine,
-    description: "RSS + API sources",
-  },
-  {
-    name: "Last Updated",
-    value: "--",
-    icon: RiTimeLine,
-    description: "Most recent fetch",
-  },
-];
+/** Convert database row to domain Article type */
+function toArticle(row: ArticleRow): Article {
+  return {
+    id: row.id,
+    title: row.title,
+    link: row.link,
+    snippet: row.snippet,
+    photoUrl: row.photo_url,
+    sourceName: row.source_name,
+    sourceUrl: row.source_url,
+    publishedAt: row.published_at,
+    sourceType: row.source_type,
+    summary: row.summary,
+    sentiment: row.sentiment,
+    categories: row.categories,
+    aiProcessed: row.ai_processed,
+  };
+}
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const supabase = await createClient();
+
+  // Fetch all articles for the current user
+  const { data: articlesData } = await supabase
+    .from("articles")
+    .select("*")
+    .order("published_at", { ascending: false });
+
+  const articleRows = articlesData ?? [];
+  const articles = articleRows.map(toArticle);
+
+  // Compute KPI data
+  const totalArticles = articles.length;
+  const analyzedArticles = articles.filter((a) => a.aiProcessed);
+  const positiveCount = analyzedArticles.filter(
+    (a) => a.sentiment === "positive",
+  ).length;
+  const positivePercent =
+    analyzedArticles.length > 0
+      ? Math.round((positiveCount / analyzedArticles.length) * 100)
+      : 0;
+
+  // Count unique sources
+  const uniqueSources = new Set(
+    articles.map((a) => a.sourceName).filter(Boolean),
+  );
+  const activeSources = uniqueSources.size;
+
+  // Last updated
+  const lastUpdated = articles.length > 0 ? articles[0].publishedAt : null;
+
+  const kpiData: KPIData = {
+    totalArticles,
+    positivePercent,
+    activeSources,
+    lastUpdated,
+  };
+
+  // Compute sentiment over time data (group by day)
+  const sentimentByDay = new Map<
+    string,
+    { Positive: number; Neutral: number; Negative: number }
+  >();
+
+  for (const article of articles) {
+    if (!article.publishedAt || !article.sentiment) continue;
+
+    const day = format(new Date(article.publishedAt), "MMM d");
+    const existing = sentimentByDay.get(day) || {
+      Positive: 0,
+      Neutral: 0,
+      Negative: 0,
+    };
+
+    if (article.sentiment === "positive") existing.Positive++;
+    else if (article.sentiment === "neutral") existing.Neutral++;
+    else if (article.sentiment === "negative") existing.Negative++;
+
+    sentimentByDay.set(day, existing);
+  }
+
+  // Convert to array sorted by date (most recent last for chart)
+  const sentimentData: SentimentDataPoint[] = Array.from(
+    sentimentByDay.entries(),
+  )
+    .map(([date, counts]) => ({ date, ...counts }))
+    .reverse()
+    .slice(-14); // Last 14 days
+
+  // Compute sources ranking
+  const sourcesCounts = new Map<string, number>();
+  for (const article of articles) {
+    if (!article.sourceName) continue;
+    sourcesCounts.set(
+      article.sourceName,
+      (sourcesCounts.get(article.sourceName) || 0) + 1,
+    );
+  }
+
+  const sourcesData: SourceData[] = Array.from(sourcesCounts.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10); // Top 10
+
+  // Compute category distribution
+  const categoryCounts = new Map<string, number>();
+  for (const article of articles) {
+    if (!article.categories) continue;
+    for (const category of article.categories) {
+      categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
+    }
+  }
+
+  const categoryData: CategoryData[] = Array.from(categoryCounts.entries())
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10); // Top 10
+
+  // Recent articles for feed (limit to 50)
+  const recentArticles = articles.slice(0, 50);
+
   return (
     <>
       {/* Page header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-50">
-          Dashboard
-        </h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          News monitoring overview for SKK Migas Kalsul.
-        </p>
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+            Dashboard
+          </h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            News monitoring overview for SKK Migas Kalsul.
+          </p>
+        </div>
+        <FetchNewsButton />
       </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {placeholderKPIs.map((kpi) => (
-          <Card key={kpi.name}>
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
-                <kpi.icon className="size-5" aria-hidden="true" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {kpi.name}
-                </p>
-                <p className="text-2xl font-semibold text-gray-900 dark:text-gray-50">
-                  {kpi.value}
-                </p>
-              </div>
-            </div>
-            <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
-              {kpi.description}
-            </p>
-          </Card>
-        ))}
-      </div>
+      <KPICards data={kpiData} />
 
-      {/* Charts placeholder */}
+      {/* Charts row */}
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400">
-            Sentiment Over Time
-          </h2>
-          <div className="mt-4 flex h-64 items-center justify-center rounded-md border border-dashed border-gray-300 dark:border-gray-700">
-            <p className="text-sm text-gray-400 dark:text-gray-500">
-              Chart will appear here
-            </p>
-          </div>
-        </Card>
-        <Card>
-          <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400">
-            Sources Breakdown
-          </h2>
-          <div className="mt-4 flex h-64 items-center justify-center rounded-md border border-dashed border-gray-300 dark:border-gray-700">
-            <p className="text-sm text-gray-400 dark:text-gray-500">
-              Chart will appear here
-            </p>
-          </div>
-        </Card>
+        <SentimentChart data={sentimentData} />
+        <SourcesBarList data={sourcesData} />
       </div>
 
-      {/* Article feed placeholder */}
+      {/* Category chart */}
+      <div className="mt-6">
+        <CategoryChart data={categoryData} />
+      </div>
+
+      {/* Article feed */}
       <div className="mt-6">
         <Card>
-          <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400">
+          <h2 className="text-sm font-medium text-gray-900 dark:text-gray-50">
             Recent Articles
           </h2>
-          <div className="mt-4 flex h-48 items-center justify-center rounded-md border border-dashed border-gray-300 dark:border-gray-700">
-            <p className="text-sm text-gray-400 dark:text-gray-500">
-              Article feed will appear here
-            </p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Latest news from all sources
+          </p>
+          <div className="mt-4">
+            <ArticleFeed articles={recentArticles} />
           </div>
         </Card>
       </div>

@@ -10,11 +10,13 @@ import {
   RiLogoutBoxRLine,
   RiMenuLine,
   RiCloseLine,
-  RiFireFill,
   RiFireLine,
+  RiSideBarLine,
+  RiSideBarFill,
 } from "@remixicon/react";
 
 import { createClient } from "@/lib/supabase/client";
+import { useSidebar } from "@/lib/contexts/SidebarContext";
 import { cx } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 
@@ -25,17 +27,28 @@ const navigation = [
 
 export function Sidebar({ className }: Readonly<{ className?: string }>) {
   const pathname = usePathname();
+  const { collapse } = useSidebar();
 
   return (
     <nav className={cx("flex flex-col", className)}>
-      {/* Logo */}
-      <div className="flex h-16 items-center gap-2.5 border-b border-gray-200 px-5 dark:border-gray-800">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-blue-500 text-white">
-          <RiFireLine className="size-4" aria-hidden="true" />
+      {/* Logo + collapse button */}
+      <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-blue-500 text-white">
+            <RiFireLine className="size-4" aria-hidden="true" />
+          </div>
+          <span className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+            SKK Migas Monitor
+          </span>
         </div>
-        <span className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-          SKK Migas Monitor
-        </span>
+        <button
+          type="button"
+          onClick={collapse}
+          className="hidden rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 lg:block dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-50"
+          aria-label="Collapse sidebar"
+        >
+          <RiSideBarLine className="size-5" />
+        </button>
       </div>
 
       {/* Nav links */}
@@ -140,5 +153,23 @@ export function MobileHeader() {
         </>
       )}
     </>
+  );
+}
+
+/** Floating button to expand sidebar when it's collapsed (desktop only) */
+export function SidebarExpandButton() {
+  const { isCollapsed, expand } = useSidebar();
+
+  if (!isCollapsed) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={expand}
+      className="fixed left-4 top-4 z-40 hidden rounded-md border border-gray-200 bg-white p-2 shadow-md transition-colors hover:bg-gray-50 lg:block dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+      aria-label="Expand sidebar"
+    >
+      <RiSideBarFill className="size-5 text-gray-600 dark:text-gray-400" />
+    </button>
   );
 }
