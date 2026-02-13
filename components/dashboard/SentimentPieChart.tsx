@@ -11,15 +11,26 @@ interface SentimentPieChartProps {
   period: DashboardPeriod;
 }
 
+// Sentiment color mapping (consistent regardless of order)
+const SENTIMENT_COLORS: Record<string, "emerald" | "pink" | "gray"> = {
+  Positif: "emerald",
+  Negatif: "pink",
+  Netral: "gray",
+};
+
 export function SentimentPieChart({ data, period }: Readonly<SentimentPieChartProps>) {
   const hasData = data.total > 0;
   const periodLabel = getPeriodLabel(period);
 
+  // Create chart data sorted by count (descending)
   const chartData = [
     { name: "Positif", value: data.positive },
     { name: "Negatif", value: data.negative },
     { name: "Netral", value: data.neutral },
-  ].filter((item) => item.value > 0);
+  ].sort((a, b) => b.value - a.value);
+
+  // Colors array must match the sorted order
+  const colors = chartData.map((item) => SENTIMENT_COLORS[item.name]);
 
   return (
     <Card>
@@ -34,7 +45,7 @@ export function SentimentPieChart({ data, period }: Readonly<SentimentPieChartPr
         <div className="mt-4">
           <DonutChart
             data={chartData}
-            colors={["emerald", "pink", "gray"]}
+            colors={colors}
             valueFormatter={(value) => `${value} artikel`}
             label={`${data.total}`}
             showLegend={true}

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getSidebarCollapsed } from "@/lib/actions/sidebar";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 
 export default async function DashboardLayout({
@@ -14,5 +15,12 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
-  return <DashboardShell>{children}</DashboardShell>;
+  // Read sidebar state from cookie (server-side)
+  const sidebarCollapsed = await getSidebarCollapsed();
+
+  return (
+    <DashboardShell initialCollapsed={sidebarCollapsed}>
+      {children}
+    </DashboardShell>
+  );
 }

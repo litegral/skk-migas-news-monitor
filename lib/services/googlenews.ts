@@ -8,15 +8,17 @@
  *
  * Key features:
  * - Uses existing rss-parser library
- * - Decodes Google News article URLs to get actual article URLs via Google's API
+ * - Stores Google News URLs as-is (URL decoding happens in background)
  * - Normalizes articles to our Article type
  * - Free, no API key required
+ *
+ * NOTE: URLs are decoded in a separate background process (/api/news/decode/stream)
+ * to avoid rate limiting. Articles are stored with url_decoded = false initially.
  */
 
 import Parser from "rss-parser";
 import type { Article } from "@/lib/types/news";
 import { validateString } from "@/lib/utils/validateInput";
-import { decodeGoogleNewsUrl } from "@/lib/utils/googleNewsDecoder";
 
 /**
  * Google News RSS base URL for search queries.
@@ -28,14 +30,6 @@ import { decodeGoogleNewsUrl } from "@/lib/utils/googleNewsDecoder";
  */
 const GOOGLE_NEWS_RSS_BASE = "https://news.google.com/rss/search";
 const GOOGLE_NEWS_PARAMS = "hl=id&gl=ID&ceid=ID:id";
-
-/** Delay between URL decode requests to avoid rate limiting (ms) */
-const DECODE_DELAY_MS = 100;
-
-/** Sleep utility function */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Reusable parser instance for Google News RSS feeds.
@@ -70,6 +64,10 @@ export interface GoogleNewsFetchResult {
 /**
  * Fetch news articles from Google News RSS for a given search query.
  *
+ * Articles are stored with their original Google News URLs (url_decoded = false).
+ * URL decoding to actual article URLs happens in a background process to avoid
+ * rate limiting.
+ *
  * @param query - The search query string (e.g., "SKK Migas Kalsul").
  * @param options.topicName - Topic name to tag articles with (for matched_topics).
  * @returns Result object with data array and optional error message.
@@ -100,24 +98,19 @@ export async function fetchGoogleNewsArticles(
       return { data: [], error: null };
     }
 
-    // Process articles and resolve redirect URLs
+    // Process articles - keep original Google News URLs (will be decoded in background)
     const articles: Article[] = [];
     const validItems = (feed.items as GoogleNewsItem[]).filter(
       (item) => item.title && item.link
     );
 
-    for (let i = 0; i < validItems.length; i++) {
-      const item = validItems[i];
-
-      // Resolve the Google News redirect URL to get the actual article URL
-      const resolvedUrl = await resolveGoogleNewsUrl(item.link!);
-
+    for (const item of validItems) {
       // Extract source info from the title (Google News format: "Title - Source Name")
       const { title, sourceName } = parseGoogleNewsTitle(item.title!);
 
       articles.push({
         title,
-        link: resolvedUrl,
+        link: item.link!, // Keep original Google News URL
         snippet: item.contentSnippet ?? item.content ?? null,
         photoUrl: null, // Google News RSS doesn't include images
         sourceName,
@@ -129,12 +122,8 @@ export async function fetchGoogleNewsArticles(
         categories: null,
         aiProcessed: false,
         matchedTopics: topicName ? [topicName] : [],
+        urlDecoded: false, // Will be decoded in background process
       });
-
-      // Add delay between decode requests to avoid rate limiting
-      if (i < validItems.length - 1) {
-        await sleep(DECODE_DELAY_MS);
-      }
     }
 
     console.log(
@@ -145,34 +134,6 @@ export async function fetchGoogleNewsArticles(
     const errorMsg = err instanceof Error ? err.message : "Unknown error occurred";
     console.error(`[googlenews] Failed to fetch for query "${validatedQuery}":`, errorMsg);
     return { data: [], error: errorMsg };
-  }
-}
-
-/**
- * Resolve a Google News article URL to get the actual source article URL.
- *
- * Uses the googleNewsDecoder utility which calls Google's API to decode URLs.
- *
- * @param googleUrl - The Google News encoded URL.
- * @returns The decoded actual article URL, or the original URL if decoding fails.
- */
-async function resolveGoogleNewsUrl(googleUrl: string): Promise<string> {
-  try {
-    const result = await decodeGoogleNewsUrl(googleUrl);
-
-    if (result.status && result.decodedUrl) {
-      return result.decodedUrl;
-    }
-
-    // If decoding failed, log and return original
-    console.warn(`[googlenews] Could not decode URL: ${result.error || "Unknown error"}`);
-    return googleUrl;
-  } catch (err) {
-    console.warn(
-      `[googlenews] URL decode error for ${googleUrl}:`,
-      err instanceof Error ? err.message : err,
-    );
-    return googleUrl;
   }
 }
 

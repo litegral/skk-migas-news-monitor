@@ -131,6 +131,8 @@ export interface Database {
           full_content: string | null;
           /** Array of topic names that this article matched against. */
           matched_topics: string[];
+          /** Whether the article URL has been decoded (Google News URLs need decoding). */
+          url_decoded: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -153,6 +155,7 @@ export interface Database {
           ai_processed_at?: string | null;
           full_content?: string | null;
           matched_topics?: string[];
+          url_decoded?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -166,7 +169,7 @@ export interface Database {
           source_name?: string | null;
           source_url?: string | null;
           published_at?: string | null;
-          source_type?: "rapidapi" | "rss";
+          source_type?: "googlenews" | "rss";
           summary?: string | null;
           sentiment?: "positive" | "negative" | "neutral" | null;
           categories?: string[] | null;
@@ -175,6 +178,7 @@ export interface Database {
           ai_processed_at?: string | null;
           full_content?: string | null;
           matched_topics?: string[];
+          url_decoded?: boolean;
           created_at?: string;
           updated_at?: string;
         };

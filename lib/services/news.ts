@@ -5,12 +5,14 @@
  *   1. Fetch articles from Google News RSS / RSS sources (using topics)
  *   2. Filter RSS articles by topic keywords
  *   3. Deduplicate and upsert into the `articles` table
- *   4. Crawl full content via Crawl4AI for unprocessed articles
- *   5. Analyze with SiliconFlow LLM (summary, sentiment, categories)
- *   6. Update articles with AI results and error tracking
+ *   4. Background URL decoding (separate process via /api/news/decode/stream)
+ *   5. Crawl full content via Crawl4AI for decoded articles
+ *   6. Analyze with SiliconFlow LLM (summary, sentiment, categories)
+ *   7. Update articles with AI results and error tracking
  *
  * HARDENED: Includes concurrency control, rate limiting delays, and proper error handling.
  * TOPIC-BASED: Uses topics table for filtering instead of search_queries.
+ * URL DECODING: Happens in background process to avoid Google rate limits.
  */
 
 import pLimit from "p-limit";
@@ -27,8 +29,8 @@ type SupabaseDB = SupabaseClient<Database>;
 /** Concurrency limits for external API calls */
 const RSS_CONCURRENCY = 5; // Max 5 parallel RSS fetches
 
-/** Delay between Google News requests to be respectful (ms) */
-const GOOGLENEWS_DELAY_MS = 2000;
+/** Delay between Google News keyword fetches (ms) - just for RSS parsing, not URL decode */
+const GOOGLENEWS_DELAY_MS = 500;
 
 /** Delay between LLM calls to avoid rate limits (ms) */
 const LLM_DELAY_MS = 500;
@@ -36,13 +38,62 @@ const LLM_DELAY_MS = 500;
 /** Maximum keywords to fetch per topic (to limit API calls) */
 const MAX_KEYWORDS_PER_TOPIC = 5;
 
+/** Default lookback period for first fetch (days) */
+const DEFAULT_LOOKBACK_DAYS = 7;
+
 // ---------------------------------------------------------------------------
 // Fetch & Store
 // ---------------------------------------------------------------------------
 
 export interface FetchResult {
   inserted: number;
+  skipped: number;
   errors: string[];
+}
+
+/**
+ * Get the cutoff date for incremental fetching.
+ * 
+ * - If articles exist: use the most recent published_at date
+ * - If no articles exist: use DEFAULT_LOOKBACK_DAYS ago
+ * 
+ * @returns Cutoff date - only fetch articles published after this date
+ */
+async function getIncrementalCutoffDate(
+  supabase: SupabaseDB,
+  userId: string,
+): Promise<Date> {
+  const { data } = await supabase
+    .from("articles")
+    .select("published_at")
+    .eq("user_id", userId)
+    .order("published_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (data?.published_at) {
+    const lastPublished = new Date(data.published_at);
+    console.log(`[news] Incremental fetch: articles after ${lastPublished.toISOString()}`);
+    return lastPublished;
+  }
+
+  // No articles exist - use default lookback
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - DEFAULT_LOOKBACK_DAYS);
+  console.log(`[news] First fetch: articles from last ${DEFAULT_LOOKBACK_DAYS} days (since ${cutoff.toISOString()})`);
+  return cutoff;
+}
+
+/**
+ * Filter articles to only include those published after the cutoff date.
+ * Articles without a publishedAt date are excluded.
+ */
+function filterArticlesByDate(articles: Article[], cutoffDate: Date): Article[] {
+  return articles.filter((article) => {
+    if (!article.publishedAt) return false;
+    const publishedAt = new Date(article.publishedAt);
+    return publishedAt > cutoffDate;
+  });
 }
 
 /**
@@ -50,10 +101,12 @@ export interface FetchResult {
  * Each keyword becomes a search query, and results are tagged with the topic name.
  * Topics without keywords are skipped.
  * Requests are made sequentially with delay to be respectful to Google.
+ * 
+ * INCREMENTAL: Only fetches articles published after the most recent article in the database.
  *
  * @param supabase - Supabase client instance.
  * @param userId - The authenticated user's ID.
- * @returns Number of articles upserted and any errors encountered.
+ * @returns Number of articles upserted, skipped, and any errors encountered.
  */
 export async function fetchAndStoreGoogleNews(
   supabase: SupabaseDB,
@@ -61,7 +114,10 @@ export async function fetchAndStoreGoogleNews(
 ): Promise<FetchResult> {
   const errors: string[] = [];
 
-  // 1. Get enabled topics with keywords for this user.
+  // 1. Get cutoff date for incremental fetching
+  const cutoffDate = await getIncrementalCutoffDate(supabase, userId);
+
+  // 2. Get enabled topics with keywords for this user.
   const { data: topics, error: tErr } = await supabase
     .from("topics")
     .select("name, keywords")
@@ -69,14 +125,14 @@ export async function fetchAndStoreGoogleNews(
     .eq("enabled", true);
 
   if (tErr) {
-    return { inserted: 0, errors: [`Failed to load topics: ${tErr.message}`] };
+    return { inserted: 0, skipped: 0, errors: [`Failed to load topics: ${tErr.message}`] };
   }
 
   if (!topics || topics.length === 0) {
-    return { inserted: 0, errors: ["No enabled topics found"] };
+    return { inserted: 0, skipped: 0, errors: ["No enabled topics found"] };
   }
 
-  // 2. Build list of keywords to fetch
+  // 3. Build list of keywords to fetch
   const keywordQueue: { keyword: string; topicName: string }[] = [];
 
   for (const topic of topics) {
@@ -95,10 +151,10 @@ export async function fetchAndStoreGoogleNews(
   }
 
   if (keywordQueue.length === 0) {
-    return { inserted: 0, errors: ["No keywords found in any enabled topic"] };
+    return { inserted: 0, skipped: 0, errors: ["No keywords found in any enabled topic"] };
   }
 
-  // 3. Fetch articles from Google News sequentially with delay
+  // 4. Fetch articles from Google News sequentially with delay
   const allArticles: Article[] = [];
 
   for (let i = 0; i < keywordQueue.length; i++) {
@@ -123,21 +179,32 @@ export async function fetchAndStoreGoogleNews(
   }
 
   if (allArticles.length === 0) {
-    return { inserted: 0, errors };
+    return { inserted: 0, skipped: 0, errors };
   }
 
-  // 4. Upsert into the articles table (with matchedTopics merging).
-  const count = await upsertArticles(supabase, userId, allArticles);
+  // 5. Filter to only include articles published after cutoff date
+  const newArticles = filterArticlesByDate(allArticles, cutoffDate);
+  const skipped = allArticles.length - newArticles.length;
 
-  console.log(`[news] Google News: Inserted ${count} articles from ${keywordQueue.length} keyword searches`);
-  return { inserted: count, errors };
+  if (newArticles.length === 0) {
+    console.log(`[news] Google News: No new articles found (${skipped} skipped as already fetched)`);
+    return { inserted: 0, skipped, errors };
+  }
+
+  // 6. Upsert into the articles table (with matchedTopics merging).
+  const count = await upsertArticles(supabase, userId, newArticles);
+
+  console.log(`[news] Google News: Inserted ${count} articles, skipped ${skipped} (already fetched)`);
+  return { inserted: count, skipped, errors };
 }
 
 /**
  * Fetch articles from all enabled RSS feeds, filter by topics, then upsert.
  * Only articles matching at least one topic keyword are stored.
+ * 
+ * INCREMENTAL: Only fetches articles published after the most recent article in the database.
  *
- * @returns Number of articles upserted and any errors encountered.
+ * @returns Number of articles upserted, skipped, and any errors encountered.
  */
 export async function fetchAndStoreRSS(
   supabase: SupabaseDB,
@@ -145,7 +212,10 @@ export async function fetchAndStoreRSS(
 ): Promise<FetchResult> {
   const errors: string[] = [];
 
-  // 1. Get enabled RSS feeds for this user.
+  // 1. Get cutoff date for incremental fetching
+  const cutoffDate = await getIncrementalCutoffDate(supabase, userId);
+
+  // 2. Get enabled RSS feeds for this user.
   const { data: feeds, error: fErr } = await supabase
     .from("rss_feeds")
     .select("name, url")
@@ -153,14 +223,14 @@ export async function fetchAndStoreRSS(
     .eq("enabled", true);
 
   if (fErr) {
-    return { inserted: 0, errors: [`Failed to load feeds: ${fErr.message}`] };
+    return { inserted: 0, skipped: 0, errors: [`Failed to load feeds: ${fErr.message}`] };
   }
 
   if (!feeds || feeds.length === 0) {
-    return { inserted: 0, errors: ["No enabled RSS feeds found"] };
+    return { inserted: 0, skipped: 0, errors: ["No enabled RSS feeds found"] };
   }
 
-  // 2. Get enabled topics for filtering.
+  // 3. Get enabled topics for filtering.
   const { data: topics, error: tErr } = await supabase
     .from("topics")
     .select("name, keywords")
@@ -168,14 +238,14 @@ export async function fetchAndStoreRSS(
     .eq("enabled", true);
 
   if (tErr) {
-    return { inserted: 0, errors: [`Failed to load topics: ${tErr.message}`] };
+    return { inserted: 0, skipped: 0, errors: [`Failed to load topics: ${tErr.message}`] };
   }
 
   if (!topics || topics.length === 0) {
-    return { inserted: 0, errors: ["No enabled topics found for filtering RSS articles"] };
+    return { inserted: 0, skipped: 0, errors: ["No enabled topics found for filtering RSS articles"] };
   }
 
-  // 3. Fetch articles from each feed with concurrency control.
+  // 4. Fetch articles from each feed with concurrency control.
   const limit = pLimit(RSS_CONCURRENCY);
   const fetchPromises = feeds.map((f) =>
     limit(async () => {
@@ -191,22 +261,31 @@ export async function fetchAndStoreRSS(
   const allRawArticles = fetchResults.flat();
 
   if (allRawArticles.length === 0) {
-    return { inserted: 0, errors };
+    return { inserted: 0, skipped: 0, errors };
   }
 
-  // 4. Filter articles by topics (case-insensitive substring match).
-  const filteredArticles = filterArticlesByTopics(allRawArticles, topics);
+  // 5. Filter articles by topics (case-insensitive substring match).
+  const topicFilteredArticles = filterArticlesByTopics(allRawArticles, topics);
 
-  if (filteredArticles.length === 0) {
+  if (topicFilteredArticles.length === 0) {
     console.log(`[news] RSS: No articles matched any topics`);
-    return { inserted: 0, errors };
+    return { inserted: 0, skipped: 0, errors };
   }
 
-  // 5. Upsert into the articles table.
-  const count = await upsertArticles(supabase, userId, filteredArticles);
+  // 6. Filter to only include articles published after cutoff date
+  const newArticles = filterArticlesByDate(topicFilteredArticles, cutoffDate);
+  const skipped = topicFilteredArticles.length - newArticles.length;
 
-  console.log(`[news] RSS: Inserted ${count} articles from ${feeds.length} feeds (${filteredArticles.length} matched topics)`);
-  return { inserted: count, errors };
+  if (newArticles.length === 0) {
+    console.log(`[news] RSS: No new articles found (${skipped} skipped as already fetched)`);
+    return { inserted: 0, skipped, errors };
+  }
+
+  // 7. Upsert into the articles table.
+  const count = await upsertArticles(supabase, userId, newArticles);
+
+  console.log(`[news] RSS: Inserted ${count} articles, skipped ${skipped} (already fetched)`);
+  return { inserted: count, skipped, errors };
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +490,7 @@ async function upsertArticles(
 
   let totalInserted = 0;
 
-  // 6. INSERT new articles (with ai_processed = false)
+  // 6. INSERT new articles (with ai_processed = false, url_decoded based on source)
   if (newArticles.length > 0) {
     const newRows = newArticles.map((a) => ({
       user_id: userId,
@@ -425,6 +504,8 @@ async function upsertArticles(
       source_type: a.sourceType as "googlenews" | "rss",
       matched_topics: a.matchedTopics ?? [],
       ai_processed: false,
+      // Google News URLs need decoding, RSS URLs are already actual URLs
+      url_decoded: a.urlDecoded ?? (a.sourceType === "rss"),
     }));
 
     const CHUNK_SIZE = 50;

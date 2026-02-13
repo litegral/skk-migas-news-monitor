@@ -74,12 +74,14 @@ export async function GET(request: NextRequest): Promise<Response> {
       );
     }
 
-    // Get all unprocessed articles
+    // Get all unprocessed articles that have decoded URLs
+    // (Google News articles need URL decoding before we can crawl them)
     const { data: articles, error: fetchError } = await supabase
       .from("articles")
       .select("id, title, link, snippet")
       .eq("user_id", user.id)
       .eq("ai_processed", false)
+      .eq("url_decoded", true)
       .order("created_at", { ascending: true });
 
     if (fetchError) {

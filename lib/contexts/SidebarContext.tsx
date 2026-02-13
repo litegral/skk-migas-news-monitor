@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { setSidebarCollapsed } from "@/lib/actions/sidebar";
 
 interface SidebarContextValue {
   isCollapsed: boolean;
@@ -11,29 +12,28 @@ interface SidebarContextValue {
 
 const SidebarContext = React.createContext<SidebarContextValue | null>(null);
 
-const STORAGE_KEY = "sidebar-collapsed";
+interface SidebarProviderProps {
+  children: React.ReactNode;
+  initialCollapsed?: boolean;
+}
 
 export function SidebarProvider({
   children,
-}: Readonly<{ children: React.ReactNode }>) {
-  const [isCollapsed, setIsCollapsed] = React.useState(false);
-  const [isHydrated, setIsHydrated] = React.useState(false);
+  initialCollapsed = false,
+}: Readonly<SidebarProviderProps>) {
+  // Initialize from server-provided value (from cookie)
+  const [isCollapsed, setIsCollapsed] = React.useState(initialCollapsed);
 
-  // Hydrate from localStorage on mount
+  // Persist to cookie on change (skip initial render)
+  const isInitialMount = React.useRef(true);
   React.useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === "true") {
-      setIsCollapsed(true);
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
     }
-    setIsHydrated(true);
-  }, []);
-
-  // Persist to localStorage on change
-  React.useEffect(() => {
-    if (isHydrated) {
-      localStorage.setItem(STORAGE_KEY, String(isCollapsed));
-    }
-  }, [isCollapsed, isHydrated]);
+    // Fire and forget - update cookie in background
+    setSidebarCollapsed(isCollapsed);
+  }, [isCollapsed]);
 
   const toggle = React.useCallback(() => {
     setIsCollapsed((prev) => !prev);

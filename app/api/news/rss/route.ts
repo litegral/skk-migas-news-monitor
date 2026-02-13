@@ -14,6 +14,7 @@ import type { ApiResponse } from "@/lib/types/news";
 
 interface RSSResponseData {
   inserted: number;
+  skipped: number;
   errors: string[];
 }
 
@@ -41,6 +42,7 @@ export async function POST(): Promise<NextResponse<ApiResponse<RSSResponseData>>
       route: "/api/news/rss",
       userId: user.id,
       inserted: result.inserted,
+      skipped: result.skipped,
       errorCount: result.errors.length,
       durationMs: Date.now() - startTime,
     }));
@@ -49,13 +51,13 @@ export async function POST(): Promise<NextResponse<ApiResponse<RSSResponseData>>
     // Only return error status if no articles were inserted AND there are errors
     if (result.inserted === 0 && result.errors.length > 0) {
       return NextResponse.json(
-        { data: { inserted: 0, errors: result.errors }, error: result.errors[0] },
+        { data: { inserted: 0, skipped: result.skipped, errors: result.errors }, error: result.errors[0] },
         { status: 400 },
       );
     }
 
     return NextResponse.json({
-      data: { inserted: result.inserted, errors: result.errors },
+      data: { inserted: result.inserted, skipped: result.skipped, errors: result.errors },
       error: null,
     });
   } catch (err) {

@@ -46,6 +46,9 @@ export interface Article {
   /** Array of topic names that this article matched against. */
   matchedTopics?: string[];
 
+  /** Whether the article URL has been decoded (Google News URLs need decoding). */
+  urlDecoded?: boolean;
+
   /** Timestamps from database. */
   createdAt?: string;
   updatedAt?: string;

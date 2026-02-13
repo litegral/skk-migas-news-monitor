@@ -81,12 +81,19 @@ function saveFetchTimestamp(): void {
   localStorage.setItem(LAST_FETCH_KEY, Date.now().toString());
 }
 
+/** Result from a single fetch API call */
+interface FetchApiResult {
+  inserted: number;
+  skipped: number;
+}
+
 export function FetchNewsButton({ onFetchingChange }: Readonly<FetchNewsButtonProps> = {}) {
   const { mutate } = useSWRConfig();
   const { startAnalysis, isAnalyzing } = useAnalysis();
   const [step, setStep] = React.useState<FetchStep>("idle");
   const [error, setError] = React.useState<string | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = React.useState<number>(0);
+  const [lastFetchResult, setLastFetchResult] = React.useState<FetchApiResult | null>(null);
 
   // Check cooldown on mount and update every second while active
   React.useEffect(() => {
@@ -121,6 +128,10 @@ export function FetchNewsButton({ onFetchingChange }: Readonly<FetchNewsButtonPr
 
     setStep("googlenews");
     setError(null);
+    setLastFetchResult(null);
+
+    let totalInserted = 0;
+    let totalSkipped = 0;
 
     try {
       // Step 1: Fetch from Google News RSS
@@ -129,6 +140,9 @@ export function FetchNewsButton({ onFetchingChange }: Readonly<FetchNewsButtonPr
         const data = await googleNewsRes.json();
         throw new Error(data.error || "Failed to fetch from Google News");
       }
+      const googleNewsData = await googleNewsRes.json();
+      totalInserted += googleNewsData.data?.inserted ?? 0;
+      totalSkipped += googleNewsData.data?.skipped ?? 0;
 
       // Step 2: Fetch from RSS feeds
       setStep("rss");
@@ -137,8 +151,12 @@ export function FetchNewsButton({ onFetchingChange }: Readonly<FetchNewsButtonPr
         const data = await rssRes.json();
         throw new Error(data.error || "Failed to fetch RSS feeds");
       }
+      const rssData = await rssRes.json();
+      totalInserted += rssData.data?.inserted ?? 0;
+      totalSkipped += rssData.data?.skipped ?? 0;
 
       setStep("done");
+      setLastFetchResult({ inserted: totalInserted, skipped: totalSkipped });
 
       // Save fetch timestamp for cooldown
       saveFetchTimestamp();
@@ -204,9 +222,20 @@ export function FetchNewsButton({ onFetchingChange }: Readonly<FetchNewsButtonPr
   /**
    * Get the appropriate status message to display below the button.
    */
-  const getStatusMessage = (): { text: string; type: "error" | "warning" | "info" } | null => {
+  const getStatusMessage = (): { text: string; type: "error" | "warning" | "info" | "success" } | null => {
     if (error) {
       return { text: error, type: "error" };
+    }
+    if (step === "done" && lastFetchResult) {
+      const { inserted, skipped } = lastFetchResult;
+      if (inserted === 0 && skipped > 0) {
+        return { text: `Tidak ada berita baru (${skipped} sudah ada)`, type: "info" };
+      }
+      if (inserted > 0) {
+        const skippedText = skipped > 0 ? `, ${skipped} sudah ada` : "";
+        return { text: `${inserted} berita baru${skippedText}`, type: "success" };
+      }
+      return { text: "Tidak ada berita ditemukan", type: "info" };
     }
     if (isAnalyzing) {
       return { text: "Analisis sedang berlangsung. Mohon tunggu.", type: "info" };
@@ -240,7 +269,9 @@ export function FetchNewsButton({ onFetchingChange }: Readonly<FetchNewsButtonPr
               ? "text-red-500 dark:text-red-400"
               : statusMessage.type === "warning"
                 ? "text-amber-600 dark:text-amber-400"
-                : "text-gray-500 dark:text-gray-400"
+                : statusMessage.type === "success"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-gray-500 dark:text-gray-400"
           }`}
         >
           {statusMessage.text}

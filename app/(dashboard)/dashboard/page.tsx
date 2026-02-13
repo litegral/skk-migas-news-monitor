@@ -70,8 +70,15 @@ export default async function DashboardPage() {
     (a) => a.aiProcessed && a.aiError != null
   ).length;
   
-  // Pending: not yet processed
-  const pendingCount = articles.filter((a) => !a.aiProcessed).length;
+  // Pending analysis: url_decoded = true AND ai_processed = false (ready for analysis)
+  const pendingCount = articles.filter(
+    (a) => !a.aiProcessed && a.urlDecoded === true
+  ).length;
+  
+  // Pending decode: url_decoded = false (waiting for URL decode before analysis)
+  const decodePendingCount = articles.filter(
+    (a) => a.urlDecoded === false
+  ).length;
 
   const positiveCount = successfullyAnalyzed.filter(
     (a) => a.sentiment === "positive",
@@ -127,9 +134,9 @@ export default async function DashboardPage() {
     total: successfullyAnalyzed.length,
   };
 
-  // Compute sources ranking
+  // Compute sources ranking (from analyzed articles only, to match sentiment pie)
   const sourcesCounts = new Map<string, number>();
-  for (const article of articles) {
+  for (const article of successfullyAnalyzed) {
     if (!article.sourceName) continue;
     sourcesCounts.set(
       article.sourceName,
@@ -137,10 +144,21 @@ export default async function DashboardPage() {
     );
   }
 
-  const sourcesData = Array.from(sourcesCounts.entries())
+  // Get all sources sorted by count
+  const allSourcesData = Array.from(sourcesCounts.entries())
     .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 10); // Top 10
+    .sort((a, b) => b.value - a.value);
+
+  // Take top 6 and calculate "Others" count
+  const topSources = allSourcesData.slice(0, 6);
+  const topSourcesTotal = topSources.reduce((sum, s) => sum + s.value, 0);
+  const totalArticlesWithSource = allSourcesData.reduce((sum, s) => sum + s.value, 0);
+  const othersCount = totalArticlesWithSource - topSourcesTotal;
+
+  // Add "Lainnya" (Others) row if there are more sources beyond top 6
+  const sourcesData = othersCount > 0
+    ? [...topSources, { name: "Lainnya", value: othersCount }]
+    : topSources;
 
   // Compute category distribution
   const categoryCounts = new Map<string, number>();
@@ -156,18 +174,17 @@ export default async function DashboardPage() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 10); // Top 10
 
-  // Recent articles for feed (limit to 50)
-  const recentArticles = articles.slice(0, 50);
-
   // Build initial data for SWR fallback
+  // Pass ALL articles - ArticleFeed handles pagination client-side
   const initialData: DashboardData = {
-    articles: recentArticles,
+    articles,
     totalArticles,
     kpiData: {
       totalArticles,
       analyzedCount,
       failedCount,
       pendingCount,
+      decodePendingCount,
       positivePercent,
       activeSources,
       lastUpdated,
@@ -175,6 +192,7 @@ export default async function DashboardPage() {
     sentimentData,
     sentimentPieData,
     sourcesData,
+    allSourcesData,
     categoryData,
     availableTopics,
     pendingCount,

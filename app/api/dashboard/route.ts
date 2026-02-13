@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { format } from "date-fns";
+import { format, eachDayOfInterval, startOfDay } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import type { Article } from "@/lib/types/news";
 import type { ArticleRow } from "@/lib/types/database";
@@ -25,7 +25,8 @@ export interface KPIData {
   totalArticles: number;
   analyzedCount: number;  // Successfully analyzed (has summary)
   failedCount: number;    // Failed analysis (has ai_error)
-  pendingCount: number;   // Not yet processed
+  pendingCount: number;   // Ready for analysis (url_decoded = true, ai_processed = false)
+  decodePendingCount: number; // Waiting for URL decode (url_decoded = false)
   positivePercent: number;
   activeSources: number;
   lastUpdated: string | null;
@@ -61,12 +62,17 @@ export interface SentimentPieData {
 
 /** Complete dashboard data response */
 export interface DashboardData {
+  /** All articles for the feed (not filtered by period) */
   articles: Article[];
+  /** Total count of all articles */
   totalArticles: number;
   kpiData: KPIData;
   sentimentData: SentimentDataPoint[];
   sentimentPieData: SentimentPieData;
+  /** Top 10 sources + "Lainnya" for bar chart */
   sourcesData: SourceData[];
+  /** All sources for modal view */
+  allSourcesData: SourceData[];
   categoryData: CategoryData[];
   availableTopics: string[];
   pendingCount: number;
@@ -93,6 +99,7 @@ function toArticle(row: ArticleRow): Article {
     aiProcessedAt: row.ai_processed_at,
     fullContent: row.full_content,
     matchedTopics: row.matched_topics ?? [],
+    urlDecoded: row.url_decoded,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -157,8 +164,15 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
       (a) => a.aiProcessed && a.aiError != null
     ).length;
     
-    // Pending: not yet processed
-    const pendingCount = articles.filter((a) => !a.aiProcessed).length;
+    // Pending analysis: url_decoded = true AND ai_processed = false (ready for analysis)
+    const pendingCount = articles.filter(
+      (a) => !a.aiProcessed && a.urlDecoded === true
+    ).length;
+    
+    // Pending decode: url_decoded = false (waiting for URL decode before analysis)
+    const decodePendingCount = articles.filter(
+      (a) => a.urlDecoded === false
+    ).length;
 
     const positiveCount = successfullyAnalyzed.filter(
       (a) => a.sentiment === "positive",
@@ -182,6 +196,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
       analyzedCount,
       failedCount,
       pendingCount,
+      decodePendingCount,
       positivePercent,
       activeSources,
       lastUpdated,
@@ -210,13 +225,21 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
       sentimentByDay.set(day, existing);
     }
 
-    // Convert to array sorted by date (most recent last for chart)
-    // No longer limiting to 14 days - period filtering handles the range
-    const sentimentData: SentimentDataPoint[] = Array.from(
-      sentimentByDay.entries(),
-    )
-      .map(([date, counts]) => ({ date, ...counts }))
-      .reverse();
+    // Generate all dates in the period range and fill missing days with zeros
+    const today = startOfDay(new Date());
+    const startDate = cutoffDate ? startOfDay(cutoffDate) : today;
+    const allDatesInRange = eachDayOfInterval({ start: startDate, end: today });
+
+    const sentimentData: SentimentDataPoint[] = allDatesInRange.map((date) => {
+      const dayKey = format(date, "MMM d");
+      const existing = sentimentByDay.get(dayKey);
+      return {
+        date: dayKey,
+        Positif: existing?.Positif ?? 0,
+        Netral: existing?.Netral ?? 0,
+        Negatif: existing?.Negatif ?? 0,
+      };
+    });
 
     // Compute sentiment pie data from period-filtered articles
     const analyzedInPeriod = articles.filter(
@@ -229,9 +252,9 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
       total: analyzedInPeriod.length,
     };
 
-    // Compute sources ranking
+    // Compute sources ranking (from analyzed articles only, to match sentiment pie)
     const sourcesCounts = new Map<string, number>();
-    for (const article of articles) {
+    for (const article of analyzedInPeriod) {
       if (!article.sourceName) continue;
       sourcesCounts.set(
         article.sourceName,
@@ -239,10 +262,21 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
       );
     }
 
-    const sourcesData: SourceData[] = Array.from(sourcesCounts.entries())
+    // Get all sources sorted by count
+    const allSourcesData = Array.from(sourcesCounts.entries())
       .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 10); // Top 10
+      .sort((a, b) => b.value - a.value);
+
+    // Take top 6 and calculate "Others" count
+    const topSources = allSourcesData.slice(0, 6);
+    const topSourcesTotal = topSources.reduce((sum, s) => sum + s.value, 0);
+    const totalArticlesWithSource = allSourcesData.reduce((sum, s) => sum + s.value, 0);
+    const othersCount = totalArticlesWithSource - topSourcesTotal;
+
+    // Add "Lainnya" (Others) row if there are more sources beyond top 6
+    const sourcesData: SourceData[] = othersCount > 0
+      ? [...topSources, { name: "Lainnya", value: othersCount }]
+      : topSources;
 
     // Compute category distribution
     const categoryCounts = new Map<string, number>();
@@ -258,16 +292,18 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
       .sort((a, b) => b.count - a.count)
       .slice(0, 10); // Top 10
 
-    // Return all period-filtered articles for the feed
-    // (ArticleFeed component handles pagination client-side)
+    // Return ALL articles for the feed (not filtered by period)
+    // Period filtering only applies to charts/KPIs
+    // ArticleFeed component handles pagination client-side
     return NextResponse.json({
       data: {
-        articles,
+        articles: allArticles,
         totalArticles: allArticles.length,
         kpiData,
         sentimentData,
         sentimentPieData,
         sourcesData,
+        allSourcesData,
         categoryData,
         availableTopics,
         pendingCount,

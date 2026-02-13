@@ -4,7 +4,9 @@
  * AnalyzeButton triggers AI analysis of pending articles.
  *
  * Features:
- * - Shows analysis progress: "Analyze (75/100)"
+ * - Automatically decodes URLs first if there are decode-pending articles
+ * - Shows decode progress: "Memproses URL 5/18"
+ * - Shows analysis progress: "Menganalisis 75/100"
  * - Shows failed count with retry option: "10 failed - Click to retry"
  * - Resets failed articles before re-analyzing
  * - Disabled during fetch operations
@@ -30,8 +32,11 @@ export function AnalyzeButton({ isFetching = false, period }: Readonly<AnalyzeBu
   const { mutate } = useSWRConfig();
   const { data } = useDashboardData({ period });
   const { 
-    startAnalysis, 
+    startProcess,
+    isProcessing,
+    isDecoding,
     isAnalyzing, 
+    decodeProgress,
     analyzedCount: sessionAnalyzed, 
     totalPending: sessionTotal, 
     failedCount: sessionFailed 
@@ -42,18 +47,21 @@ export function AnalyzeButton({ isFetching = false, period }: Readonly<AnalyzeBu
   const analyzedCount = kpiData?.analyzedCount ?? 0;
   const failedCount = kpiData?.failedCount ?? 0;
   const pendingCount = kpiData?.pendingCount ?? 0;
+  const decodePendingCount = kpiData?.decodePendingCount ?? 0;
   const totalArticles = kpiData?.totalArticles ?? 0;
 
-  // Total that should be analyzed = analyzed + pending (excluding current failures)
-  const targetCount = analyzedCount + pendingCount + failedCount;
+  // Total that should be analyzed = analyzed + pending + decode-pending (excluding current failures)
+  const targetCount = analyzedCount + pendingCount + decodePendingCount + failedCount;
 
   const isDisabled = isFetching || isResetting || totalArticles === 0;
   const hasFailures = failedCount > 0;
   const hasPending = pendingCount > 0;
-  const canAnalyze = hasFailures || hasPending;
+  const hasDecodePending = decodePendingCount > 0;
+  // Can process if there are failures, pending analysis, or pending decode
+  const canProcess = hasFailures || hasPending || hasDecodePending;
 
-  async function handleAnalyze() {
-    if (isAnalyzing) return;
+  async function handleProcess() {
+    if (isProcessing) return;
 
     try {
       // If there are failed articles, reset them first
@@ -62,8 +70,8 @@ export function AnalyzeButton({ isFetching = false, period }: Readonly<AnalyzeBu
         const res = await fetch("/api/news/retry", { method: "POST" });
         
         if (!res.ok) {
-          const data = await res.json();
-          console.error("Failed to reset articles:", data.error);
+          const responseData = await res.json();
+          console.error("Failed to reset articles:", responseData.error);
         }
         
         setIsResetting(false);
@@ -76,17 +84,18 @@ export function AnalyzeButton({ isFetching = false, period }: Readonly<AnalyzeBu
         );
       }
 
-      // Get fresh dashboard data to check pending count
+      // Get fresh dashboard data to check pending counts
       const freshRes = await fetch(`${DASHBOARD_API_BASE}?period=${period}`);
       const freshJson = await freshRes.json();
-      const newPendingCount = freshJson.data?.kpiData?.pendingCount ?? 0;
+      const freshDecodePendingCount = freshJson.data?.kpiData?.decodePendingCount ?? 0;
+      const freshPendingCount = freshJson.data?.kpiData?.pendingCount ?? 0;
 
-      // Start analysis if there are pending articles
-      if (newPendingCount > 0) {
-        startAnalysis(newPendingCount);
+      // Start the full process (decode if needed, then analyze)
+      if (freshDecodePendingCount > 0 || freshPendingCount > 0) {
+        startProcess(freshDecodePendingCount, freshPendingCount);
       }
     } catch (err) {
-      console.error("Analyze error:", err);
+      console.error("Process error:", err);
       setIsResetting(false);
     }
   }
@@ -98,8 +107,12 @@ export function AnalyzeButton({ isFetching = false, period }: Readonly<AnalyzeBu
     if (isResetting) {
       return "Mereset...";
     }
+    if (isDecoding && decodeProgress) {
+      const current = decodeProgress.decoded + decodeProgress.failed;
+      return `Proses URL ${current}/${decodeProgress.total}`;
+    }
     if (isAnalyzing) {
-      return `Menganalisis... ${sessionAnalyzed}/${sessionTotal}`;
+      return `Analisis ${sessionAnalyzed}/${sessionTotal}`;
     }
     return `Analisis (${analyzedCount}/${targetCount})`;
   }
@@ -111,17 +124,26 @@ export function AnalyzeButton({ isFetching = false, period }: Readonly<AnalyzeBu
     if (isResetting) {
       return { text: "Mereset artikel yang gagal...", type: "info" };
     }
+    if (isDecoding) {
+      return { text: "Memproses URL Google News...", type: "info" };
+    }
     if (isAnalyzing) {
       if (sessionFailed > 0) {
         return { text: `${sessionFailed} gagal sejauh ini`, type: "warning" };
       }
-      return { text: "Memproses artikel...", type: "info" };
+      return { text: "Menganalisis artikel...", type: "info" };
     }
     if (hasFailures) {
       return { text: `${failedCount} gagal - Klik untuk coba lagi`, type: "warning" };
     }
+    if (hasDecodePending && hasPending) {
+      return { text: `${decodePendingCount} proses URL, ${pendingCount} siap analisis`, type: "info" };
+    }
+    if (hasDecodePending) {
+      return { text: `${decodePendingCount} perlu proses URL dulu`, type: "info" };
+    }
     if (hasPending) {
-      return { text: `${pendingCount} menunggu`, type: "info" };
+      return { text: `${pendingCount} siap dianalisis`, type: "info" };
     }
     if (totalArticles === 0) {
       return { text: "Tidak ada artikel", type: "info" };
@@ -135,11 +157,11 @@ export function AnalyzeButton({ isFetching = false, period }: Readonly<AnalyzeBu
     <div className="flex flex-col gap-1">
       <Button
         variant="secondary"
-        onClick={handleAnalyze}
-        disabled={isDisabled || isAnalyzing || !canAnalyze}
+        onClick={handleProcess}
+        disabled={isDisabled || isProcessing || !canProcess}
         className="gap-2"
       >
-        {isAnalyzing || isResetting ? (
+        {isProcessing || isResetting ? (
           <RiLoader4Line className="size-4 animate-spin" />
         ) : (
           <RiSparklingLine className="size-4" />

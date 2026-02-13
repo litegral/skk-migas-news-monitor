@@ -4,14 +4,16 @@ import React from "react";
 
 import { SidebarProvider, useSidebar } from "@/lib/contexts/SidebarContext";
 import { AnalysisProvider } from "@/contexts/AnalysisContext";
+import { AutoFetchProvider } from "@/contexts/AutoFetchContext";
 import { Sidebar, MobileHeader, SidebarExpandButton } from "./Sidebar";
 import { cx } from "@/lib/utils";
 
 interface DashboardShellProps {
   children: React.ReactNode;
+  initialCollapsed?: boolean;
 }
 
-function DashboardShellInner({ children }: Readonly<DashboardShellProps>) {
+function DashboardShellInner({ children }: Readonly<{ children: React.ReactNode }>) {
   const { isCollapsed } = useSidebar();
 
   return (
@@ -47,11 +49,13 @@ function DashboardShellInner({ children }: Readonly<DashboardShellProps>) {
   );
 }
 
-export function DashboardShell({ children }: Readonly<DashboardShellProps>) {
+export function DashboardShell({ children, initialCollapsed = false }: Readonly<DashboardShellProps>) {
   return (
-    <SidebarProvider>
+    <SidebarProvider initialCollapsed={initialCollapsed}>
       <AnalysisProvider>
-        <DashboardShellInner>{children}</DashboardShellInner>
+        <AutoFetchProvider>
+          <DashboardShellInner>{children}</DashboardShellInner>
+        </AutoFetchProvider>
       </AnalysisProvider>
     </SidebarProvider>
   );
