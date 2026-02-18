@@ -1,9 +1,12 @@
+"use client";
+
 import Image from "next/image";
 import { formatDistanceToNow } from "date-fns";
-import { RiExternalLinkLine, RiHashtag } from "@remixicon/react";
+import { RiExternalLinkLine, RiHashtag, RiInformationLine } from "@remixicon/react";
 
 import type { Article } from "@/lib/types/news";
 import { Card } from "@/components/ui/Card";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/Tooltip";
 import { SentimentBadge } from "./SentimentBadge";
 import { CategoryBadge } from "./CategoryBadge";
 import { cx } from "@/lib/utils";
@@ -97,6 +100,22 @@ export function ArticleCard({ article }: Readonly<ArticleCardProps>) {
         {/* Sentiment and category badges */}
         <div className="flex flex-wrap items-center gap-2">
           <SentimentBadge sentiment={article.sentiment} />
+          {article.aiReason && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  aria-label="Alasan klasifikasi AI"
+                >
+                  <RiInformationLine className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {article.aiReason}
+              </TooltipContent>
+            </Tooltip>
+          )}
           {article.categories?.slice(0, 3).map((category) => (
             <CategoryBadge key={category} category={category} />
           ))}

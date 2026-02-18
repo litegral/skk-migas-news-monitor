@@ -257,14 +257,28 @@ export function AutoFetchIndicator() {
                 </span>
               </div>
             ) : lastFetchResult ? (
-              <div className="flex justify-between">
-                <span>Hasil</span>
-                <span className="font-medium text-gray-900 dark:text-gray-100">
-                  {lastFetchResult.inserted > 0
-                    ? `+${lastFetchResult.inserted} artikel`
-                    : "Tidak ada baru"}
-                </span>
-              </div>
+              <>
+                <div className="flex justify-between">
+                  <span>Hasil</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100">
+                    {lastFetchResult.inserted > 0
+                      ? `+${lastFetchResult.inserted} artikel`
+                      : "Tidak ada baru"}
+                  </span>
+                </div>
+                {lastFetchResult.warnings.length > 0 && (
+                  <div className="space-y-1 border-t border-amber-200 pt-1.5 dark:border-amber-900/40">
+                    {lastFetchResult.warnings.map((w, i) => (
+                      <p
+                        key={i}
+                        className="text-amber-600 dark:text-amber-400 leading-tight"
+                      >
+                        ⚠ {w}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </>
             ) : null}
 
             {/* Decode progress - only show when decoding */}

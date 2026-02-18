@@ -133,6 +133,10 @@ export interface Database {
           matched_topics: string[];
           /** Whether the article URL has been decoded (Google News URLs need decoding). */
           url_decoded: boolean;
+          /** Whether URL decoding failed (still marked url_decoded=true to prevent retries). */
+          decode_failed: boolean;
+          /** LLM's explanation for why it chose the sentiment/categories. */
+          ai_reason: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -156,6 +160,8 @@ export interface Database {
           full_content?: string | null;
           matched_topics?: string[];
           url_decoded?: boolean;
+          decode_failed?: boolean;
+          ai_reason?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -179,6 +185,8 @@ export interface Database {
           full_content?: string | null;
           matched_topics?: string[];
           url_decoded?: boolean;
+          decode_failed?: boolean;
+          ai_reason?: string | null;
           created_at?: string;
           updated_at?: string;
         };

@@ -12,6 +12,7 @@ import type { Article, Sentiment } from "@/lib/types/news";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { ArticleCard } from "./ArticleCard";
+import { ExportButton } from "@/components/dashboard/ExportButton";
 import { cx } from "@/lib/utils";
 
 interface ArticleFeedProps {
@@ -179,19 +180,22 @@ export function ArticleFeed({
               className="w-full"
             />
         </div>
-        <Button
-          variant="secondary"
-          onClick={() => setShowFilters(!showFilters)}
-          className="gap-2"
-        >
-          <RiFilterLine className="size-4" />
-          Filters
-          {(sentimentFilter !== "all" || selectedTopics.length > 0) && (
-            <span className="ml-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-              {(sentimentFilter !== "all" ? 1 : 0) + selectedTopics.length}
-            </span>
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setShowFilters(!showFilters)}
+            className="gap-2"
+          >
+            <RiFilterLine className="size-4" />
+            Filters
+            {(sentimentFilter !== "all" || selectedTopics.length > 0) && (
+              <span className="ml-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                {(sentimentFilter !== "all" ? 1 : 0) + selectedTopics.length}
+              </span>
+            )}
+          </Button>
+          <ExportButton articles={filteredArticles} />
+        </div>
       </div>
 
       {/* Filter options */}

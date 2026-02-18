@@ -57,11 +57,14 @@ export async function POST(
     const result = await analyzeUnprocessedArticles(supabase, user.id, limit);
 
     // Get remaining unprocessed count for background loop
+    // Only count articles that are actually eligible for analysis
     const { count: remaining } = await supabase
       .from("articles")
       .select("*", { count: "exact", head: true })
       .eq("user_id", user.id)
-      .eq("ai_processed", false);
+      .eq("ai_processed", false)
+      .eq("url_decoded", true)
+      .eq("decode_failed", false);
 
     // Log the request
     console.log(JSON.stringify({

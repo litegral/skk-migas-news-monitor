@@ -5,6 +5,7 @@ import React from "react";
 import { SidebarProvider, useSidebar } from "@/lib/contexts/SidebarContext";
 import { AnalysisProvider } from "@/contexts/AnalysisContext";
 import { AutoFetchProvider } from "@/contexts/AutoFetchContext";
+import { TooltipProvider } from "@/components/ui/Tooltip";
 import { Sidebar, MobileHeader, SidebarExpandButton } from "./Sidebar";
 import { cx } from "@/lib/utils";
 
@@ -52,11 +53,13 @@ function DashboardShellInner({ children }: Readonly<{ children: React.ReactNode 
 export function DashboardShell({ children, initialCollapsed = false }: Readonly<DashboardShellProps>) {
   return (
     <SidebarProvider initialCollapsed={initialCollapsed}>
-      <AnalysisProvider>
-        <AutoFetchProvider>
-          <DashboardShellInner>{children}</DashboardShellInner>
-        </AutoFetchProvider>
-      </AnalysisProvider>
+      <TooltipProvider delayDuration={300}>
+        <AnalysisProvider>
+          <AutoFetchProvider>
+            <DashboardShellInner>{children}</DashboardShellInner>
+          </AutoFetchProvider>
+        </AnalysisProvider>
+      </TooltipProvider>
     </SidebarProvider>
   );
 }

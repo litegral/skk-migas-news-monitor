@@ -47,11 +47,14 @@ export async function POST(): Promise<NextResponse<ApiResponse<GoogleNewsRespons
       durationMs: Date.now() - startTime,
     }));
 
-    // Return partial success even if some queries failed
-    // Only return error status if no articles were inserted AND there are errors
-    if (result.inserted === 0 && result.errors.length > 0) {
+    // Return partial success even if some queries failed.
+    // Only return error status if absolutely nothing was fetched (no inserts AND
+    // no skipped duplicates) AND there are errors — meaning every query failed.
+    // When skipped > 0, queries were successfully fetched; articles just already
+    // existed, so that's a 200 with warnings, not a 400.
+    if (result.inserted === 0 && result.skipped === 0 && result.errors.length > 0) {
       return NextResponse.json(
-        { data: { inserted: 0, skipped: result.skipped, errors: result.errors }, error: result.errors[0] },
+        { data: { inserted: 0, skipped: 0, errors: result.errors }, error: result.errors[0] },
         { status: 400 },
       );
     }

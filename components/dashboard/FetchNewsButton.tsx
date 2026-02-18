@@ -1,37 +1,27 @@
 "use client";
 
 /**
- * FetchNewsButton triggers fetching from Google News RSS and RSS feeds,
- * then starts background analysis via the AnalysisContext.
+ * FetchNewsButton — thin UI wrapper over AutoFetchContext.
  *
- * Safeguards:
- * - Disabled while background analysis is running
- * - 5-minute cooldown between fetches (stored in localStorage)
+ * All fetch logic (Google News, RSS, URL decode, analysis) lives in
+ * AutoFetchContext. This component just provides a button with:
+ * - Visual feedback (spinner, check, error icons)
+ * - 5-minute cooldown between manual fetches
+ * - Status messages (inserted/skipped counts, warnings)
+ * - `onFetchingChange` callback for parent components
  */
 
 import React from "react";
 import { RiRefreshLine, RiCheckLine, RiErrorWarningLine } from "@remixicon/react";
-import { useSWRConfig } from "swr";
 
 import { Button } from "@/components/ui/Button";
-import { useAnalysis } from "@/contexts/AnalysisContext";
-import { DASHBOARD_API_BASE } from "@/lib/hooks/useDashboardData";
-
-type FetchStep = "idle" | "googlenews" | "rss" | "done" | "error";
+import { useAutoFetch, type AutoFetchStatus } from "@/contexts/AutoFetchContext";
 
 /** Cooldown duration: 5 minutes in milliseconds */
 const FETCH_COOLDOWN_MS = 5 * 60 * 1000;
 
-/** localStorage key for last fetch timestamp */
-const LAST_FETCH_KEY = "skkmigas_lastNewsFetchTime";
-
-const stepLabels: Record<FetchStep, string> = {
-  idle: "Ambil Berita",
-  googlenews: "Mengambil dari Google News...",
-  rss: "Mengambil RSS feeds...",
-  done: "Selesai!",
-  error: "Terjadi kesalahan",
-};
+/** localStorage key for manual button cooldown */
+const COOLDOWN_KEY = "skkmigas_lastNewsFetchTime";
 
 interface FetchNewsButtonProps {
   /** Callback when fetching state changes */
@@ -61,7 +51,7 @@ function formatRemainingTime(ms: number): string {
 function getCooldownRemaining(): number {
   if (typeof window === "undefined") return 0;
 
-  const lastFetch = localStorage.getItem(LAST_FETCH_KEY);
+  const lastFetch = localStorage.getItem(COOLDOWN_KEY);
   if (!lastFetch) return 0;
 
   const lastFetchTime = parseInt(lastFetch, 10);
@@ -74,26 +64,46 @@ function getCooldownRemaining(): number {
 }
 
 /**
- * Save current timestamp to localStorage.
+ * Save current timestamp to localStorage for cooldown tracking.
  */
-function saveFetchTimestamp(): void {
+function saveCooldownTimestamp(): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(LAST_FETCH_KEY, Date.now().toString());
+  localStorage.setItem(COOLDOWN_KEY, Date.now().toString());
 }
 
-/** Result from a single fetch API call */
-interface FetchApiResult {
-  inserted: number;
-  skipped: number;
+/**
+ * Derive a simple button display state from the context status.
+ */
+type ButtonDisplay = "idle" | "loading" | "done" | "error";
+
+function getButtonDisplay(status: AutoFetchStatus): ButtonDisplay {
+  switch (status) {
+    case "fetching":
+    case "decoding":
+    case "analyzing":
+      return "loading";
+    case "success":
+      return "done";
+    case "error":
+      return "error";
+    default:
+      return "idle";
+  }
 }
+
+const buttonLabels: Record<ButtonDisplay, string> = {
+  idle: "Ambil Berita",
+  loading: "Mengambil berita...",
+  done: "Selesai!",
+  error: "Terjadi kesalahan",
+};
 
 export function FetchNewsButton({ onFetchingChange }: Readonly<FetchNewsButtonProps> = {}) {
-  const { mutate } = useSWRConfig();
-  const { startAnalysis, isAnalyzing } = useAnalysis();
-  const [step, setStep] = React.useState<FetchStep>("idle");
-  const [error, setError] = React.useState<string | null>(null);
+  const { status, lastFetchResult, lastError, triggerFetchNow } = useAutoFetch();
+
   const [cooldownRemaining, setCooldownRemaining] = React.useState<number>(0);
-  const [lastFetchResult, setLastFetchResult] = React.useState<FetchApiResult | null>(null);
+  // Track whether the user manually triggered this fetch (for showing results)
+  const [manuallyTriggered, setManuallyTriggered] = React.useState(false);
 
   // Check cooldown on mount and update every second while active
   React.useEffect(() => {
@@ -102,150 +112,116 @@ export function FetchNewsButton({ onFetchingChange }: Readonly<FetchNewsButtonPr
       setCooldownRemaining(remaining);
     };
 
-    // Initial check
     checkCooldown();
-
-    // Update every second if cooldown is active
     const interval = setInterval(checkCooldown, 1000);
-
     return () => clearInterval(interval);
   }, []);
 
-  const isLoading = step !== "idle" && step !== "done" && step !== "error";
+  const display = getButtonDisplay(status);
+  const isLoading = display === "loading";
   const isCooldownActive = cooldownRemaining > 0;
-  const isDisabled = isLoading || isAnalyzing || isCooldownActive;
+  const isDisabled = isLoading || isCooldownActive;
 
   // Notify parent when fetching state changes
   React.useEffect(() => {
     onFetchingChange?.(isLoading);
   }, [isLoading, onFetchingChange]);
 
-  async function handleFetch() {
-    // Double-check cooldown (in case button wasn't disabled fast enough)
-    if (getCooldownRemaining() > 0) {
-      return;
-    }
-
-    setStep("googlenews");
-    setError(null);
-    setLastFetchResult(null);
-
-    let totalInserted = 0;
-    let totalSkipped = 0;
-
-    try {
-      // Step 1: Fetch from Google News RSS
-      const googleNewsRes = await fetch("/api/news/googlenews", { method: "POST" });
-      if (!googleNewsRes.ok) {
-        const data = await googleNewsRes.json();
-        throw new Error(data.error || "Failed to fetch from Google News");
-      }
-      const googleNewsData = await googleNewsRes.json();
-      totalInserted += googleNewsData.data?.inserted ?? 0;
-      totalSkipped += googleNewsData.data?.skipped ?? 0;
-
-      // Step 2: Fetch from RSS feeds
-      setStep("rss");
-      const rssRes = await fetch("/api/news/rss", { method: "POST" });
-      if (!rssRes.ok) {
-        const data = await rssRes.json();
-        throw new Error(data.error || "Failed to fetch RSS feeds");
-      }
-      const rssData = await rssRes.json();
-      totalInserted += rssData.data?.inserted ?? 0;
-      totalSkipped += rssData.data?.skipped ?? 0;
-
-      setStep("done");
-      setLastFetchResult({ inserted: totalInserted, skipped: totalSkipped });
-
-      // Save fetch timestamp for cooldown
-      saveFetchTimestamp();
-      setCooldownRemaining(FETCH_COOLDOWN_MS);
-
-      // Refresh all dashboard data by invalidating any key that starts with DASHBOARD_API_BASE
-      // This re-fetches data for all period variants
-      await mutate(
-        (key: string) => typeof key === "string" && key.startsWith(DASHBOARD_API_BASE),
-        undefined,
-        { revalidate: true }
-      );
-
-      // Fetch fresh dashboard data to get pending count
-      const freshRes = await fetch(DASHBOARD_API_BASE);
-      const freshJson = await freshRes.json();
-      const freshPendingCount = freshJson.data?.pendingCount ?? 0;
-
-      // Start background analysis if there are pending articles
-      if (freshPendingCount > 0 && !isAnalyzing) {
-        startAnalysis(freshPendingCount);
-      }
-
-      // Reset button after delay
-      setTimeout(() => {
-        setStep("idle");
-      }, 1500);
-    } catch (err) {
-      console.error("Fetch error:", err);
-      setError(err instanceof Error ? err.message : "Unknown error");
-      setStep("error");
-
-      // Reset after showing error
-      setTimeout(() => {
-        setStep("idle");
-        setError(null);
+  // Reset manuallyTriggered after the fetch pipeline finishes (success or error)
+  React.useEffect(() => {
+    if (manuallyTriggered && (status === "success" || status === "error")) {
+      const timeout = setTimeout(() => {
+        setManuallyTriggered(false);
       }, 3000);
+      return () => clearTimeout(timeout);
     }
+  }, [manuallyTriggered, status]);
+
+  async function handleFetch() {
+    if (getCooldownRemaining() > 0) return;
+
+    setManuallyTriggered(true);
+
+    // Start cooldown immediately so the user can't spam-click
+    saveCooldownTimestamp();
+    setCooldownRemaining(FETCH_COOLDOWN_MS);
+
+    await triggerFetchNow();
   }
 
   const getIcon = () => {
-    switch (step) {
-      case "done":
-        return <RiCheckLine className="size-4" />;
-      case "error":
-        return <RiErrorWarningLine className="size-4" />;
-      default:
-        return <RiRefreshLine className={`size-4 ${isLoading ? "animate-spin" : ""}`} />;
+    if (manuallyTriggered && display === "done") {
+      return <RiCheckLine className="size-4" />;
     }
+    if (manuallyTriggered && display === "error") {
+      return <RiErrorWarningLine className="size-4" />;
+    }
+    return <RiRefreshLine className={`size-4 ${isLoading ? "animate-spin" : ""}`} />;
   };
 
   const getVariant = () => {
-    switch (step) {
-      case "done":
-        return "primary" as const;
-      case "error":
-        return "destructive" as const;
-      default:
-        return "primary" as const;
+    if (manuallyTriggered && display === "error") {
+      return "destructive" as const;
     }
+    return "primary" as const;
+  };
+
+  /**
+   * Get the label to show on the button.
+   * Only show step-specific labels when the user manually triggered the fetch.
+   * When auto-fetch is running in background, just show disabled "Ambil Berita".
+   */
+  const getLabel = (): string => {
+    if (manuallyTriggered) {
+      return buttonLabels[display];
+    }
+    if (isLoading) {
+      // Auto-fetch is running in background — keep "Ambil Berita" but button is disabled
+      return buttonLabels.idle;
+    }
+    return buttonLabels.idle;
   };
 
   /**
    * Get the appropriate status message to display below the button.
+   * Only shows results when the user manually triggered the fetch.
    */
   const getStatusMessage = (): { text: string; type: "error" | "warning" | "info" | "success" } | null => {
-    if (error) {
-      return { text: error, type: "error" };
+    // Show error from manual trigger
+    if (manuallyTriggered && display === "error" && lastError) {
+      return { text: lastError, type: "error" };
     }
-    if (step === "done" && lastFetchResult) {
-      const { inserted, skipped } = lastFetchResult;
+
+    // Show results from manual trigger
+    if (manuallyTriggered && display === "done" && lastFetchResult) {
+      const { inserted, skipped, warnings } = lastFetchResult;
+      const hasWarnings = warnings.length > 0;
+
+      let resultText: string;
       if (inserted === 0 && skipped > 0) {
-        return { text: `Tidak ada berita baru (${skipped} sudah ada)`, type: "info" };
-      }
-      if (inserted > 0) {
+        resultText = `Tidak ada berita baru (${skipped} sudah ada)`;
+      } else if (inserted > 0) {
         const skippedText = skipped > 0 ? `, ${skipped} sudah ada` : "";
-        return { text: `${inserted} berita baru${skippedText}`, type: "success" };
+        resultText = `${inserted} berita baru${skippedText}`;
+      } else {
+        resultText = "Tidak ada berita ditemukan";
       }
-      return { text: "Tidak ada berita ditemukan", type: "info" };
+
+      if (hasWarnings) {
+        const warningText = warnings.length === 1 ? warnings[0] : `${warnings.length} peringatan`;
+        return { text: `${resultText}. Peringatan: ${warningText}`, type: "warning" };
+      }
+
+      return { text: resultText, type: inserted > 0 ? "success" : "info" };
     }
-    if (isAnalyzing) {
-      return { text: "Analisis sedang berlangsung. Mohon tunggu.", type: "info" };
-    }
+
     if (isCooldownActive) {
       return {
         text: `Jeda aktif. Coba lagi dalam ${formatRemainingTime(cooldownRemaining)}.`,
         type: "warning",
       };
     }
+
     return null;
   };
 
@@ -260,7 +236,7 @@ export function FetchNewsButton({ onFetchingChange }: Readonly<FetchNewsButtonPr
         className="gap-2"
       >
         {getIcon()}
-        {stepLabels[step]}
+        {getLabel()}
       </Button>
       {statusMessage && (
         <p

@@ -192,10 +192,11 @@ export async function decodeAndUpdateArticle(
 
   if (!decodeResult.status || !decodeResult.decodedUrl) {
     // Failed to decode - still mark as decoded to avoid infinite retries
+    // but also mark decode_failed so analysis skips this article
     // Keep the original Google News URL
     const { error } = await supabase
       .from("articles")
-      .update({ url_decoded: true })
+      .update({ url_decoded: true, decode_failed: true })
       .eq("id", article.id);
 
     if (error) {

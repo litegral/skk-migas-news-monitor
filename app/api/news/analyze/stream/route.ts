@@ -82,6 +82,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       .eq("user_id", user.id)
       .eq("ai_processed", false)
       .eq("url_decoded", true)
+      .eq("decode_failed", false)
       .order("created_at", { ascending: true });
 
     if (fetchError) {
@@ -133,15 +134,46 @@ export async function GET(request: NextRequest): Promise<Response> {
           const now = new Date().toISOString();
 
           try {
-            // 1. Crawl full content (returns null if Crawl4AI unavailable)
+            // 1. Crawl full content (required — skip analysis if crawl fails)
             const crawlResult = await crawlArticleContent(article.link);
             const content = crawlResult.data;
 
-            if (crawlResult.error && !content) {
-              console.warn(`[stream] Crawl failed for "${article.title}": ${crawlResult.error}`);
+            if (!content) {
+              const crawlError = crawlResult.error || "Konten artikel tidak dapat diambil";
+              console.warn(`[stream] Crawl failed for "${article.title}", skipping analysis: ${crawlError}`);
+
+              // Mark as processed with error — don't attempt LLM without content
+              await supabase
+                .from("articles")
+                .update({
+                  ai_processed: true,
+                  ai_error: `Crawl gagal: ${crawlError}`,
+                  ai_processed_at: now,
+                })
+                .eq("id", article.id);
+
+              failed++;
+
+              // Send progress and continue to next article
+              try {
+                controller.enqueue(formatSSE({
+                  type: "progress",
+                  analyzed,
+                  failed,
+                  total,
+                }));
+              } catch {
+                console.log("[stream] Failed to send progress event, client may have disconnected");
+                break;
+              }
+
+              if (i < pendingArticles.length - 1 && !request.signal.aborted) {
+                await sleep(LLM_DELAY_MS);
+              }
+              continue;
             }
 
-            // 2. Analyze with LLM
+            // 2. Analyze with LLM (only if we have crawled content)
             const analysisResult = await analyzeArticle({
               title: article.title,
               snippet: article.snippet,
@@ -172,6 +204,7 @@ export async function GET(request: NextRequest): Promise<Response> {
                   summary: analysisResult.data.summary,
                   sentiment: analysisResult.data.sentiment,
                   categories: analysisResult.data.categories,
+                  ai_reason: analysisResult.data.reason,
                   ai_processed: true,
                   ai_error: null,
                   ai_processed_at: now,

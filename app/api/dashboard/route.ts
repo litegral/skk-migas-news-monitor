@@ -100,6 +100,8 @@ function toArticle(row: ArticleRow): Article {
     fullContent: row.full_content,
     matchedTopics: row.matched_topics ?? [],
     urlDecoded: row.url_decoded,
+    decodeFailed: row.decode_failed,
+    aiReason: row.ai_reason,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -164,9 +166,9 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
       (a) => a.aiProcessed && a.aiError != null
     ).length;
     
-    // Pending analysis: url_decoded = true AND ai_processed = false (ready for analysis)
+    // Pending analysis: url_decoded = true AND decode_failed = false AND ai_processed = false
     const pendingCount = articles.filter(
-      (a) => !a.aiProcessed && a.urlDecoded === true
+      (a) => !a.aiProcessed && a.urlDecoded === true && a.decodeFailed !== true
     ).length;
     
     // Pending decode: url_decoded = false (waiting for URL decode before analysis)

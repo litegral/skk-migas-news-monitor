@@ -1,15 +1,23 @@
 "use client";
 
 /**
- * AutoFetchContext provides automatic news fetching on a schedule.
+ * AutoFetchContext provides automatic AND manual news fetching.
+ *
+ * This is the **single source of truth** for all news fetching in the app.
+ * Both the automatic hourly schedule and the manual FetchNewsButton delegate
+ * to this context's `performFetch()` pipeline.
  *
  * Features:
  * - Fetches news every 1 hour automatically
+ * - Each source (Google News, RSS) is fetched independently — if one fails,
+ *   the other still runs and results are collected from both
+ * - Only enters error state if ALL sources fail completely
+ * - Partial failures are tracked as warnings
  * - Decodes Google News URLs in background (3s delays to avoid rate limits)
  * - Triggers AI analysis after URL decoding completes
  * - Handles browser visibility changes (catches missed fetches)
  * - Persists last fetch time to localStorage
- * - Continues on error (resilient)
+ * - Concurrency guard prevents duplicate fetches from manual + auto triggers
  *
  * Flow:
  *   1. Fetch (fast) → Store articles with Google News URLs
@@ -39,10 +47,11 @@ export type AutoFetchStatus =
   | "success"
   | "error";
 
-interface FetchResult {
+export interface FetchResult {
   inserted: number;
   skipped: number;
   errors: number;
+  warnings: string[];
 }
 
 interface DecodeProgress {
@@ -64,7 +73,7 @@ interface AutoFetchContextValue {
   nextFetchAt: Date | null;
   /** Decode progress (when status === "decoding") */
   decodeProgress: DecodeProgress | null;
-  /** Manually trigger a fetch now */
+  /** Manually trigger a fetch now (skips the 55-min gap check) */
   triggerFetchNow: () => Promise<void>;
 }
 
@@ -172,17 +181,26 @@ export function AutoFetchProvider({ children }: Readonly<AutoFetchProviderProps>
   }, []);
 
   /**
-   * Core fetch function - now includes decode phase
+   * Core fetch function — the single pipeline for ALL news fetching.
+   *
+   * Called by:
+   * - Automatic hourly interval (skipGapCheck = false)
+   * - On-mount check (skipGapCheck = false)
+   * - Visibility change check (skipGapCheck = false)
+   * - Manual button click via triggerFetchNow() (skipGapCheck = true)
+   *
+   * @param options.skipGapCheck - If true, skip the 55-minute minimum gap check.
+   *   Used for manual triggers where the user explicitly wants to fetch now.
    */
-  const performFetch = React.useCallback(async (): Promise<void> => {
+  const performFetch = React.useCallback(async (options?: { skipGapCheck?: boolean }): Promise<void> => {
     // Prevent concurrent fetches
     if (isFetchingRef.current) {
       console.log("[AutoFetch] Fetch already in progress, skipping");
       return;
     }
 
-    // Check minimum gap
-    if (lastFetchAt) {
+    // Check minimum gap (skipped for manual triggers)
+    if (!options?.skipGapCheck && lastFetchAt) {
       const elapsed = Date.now() - lastFetchAt.getTime();
       if (elapsed < MIN_FETCH_GAP_MS) {
         console.log("[AutoFetch] Too soon since last fetch, skipping");
@@ -198,43 +216,96 @@ export function AutoFetchProvider({ children }: Readonly<AutoFetchProviderProps>
     let totalInserted = 0;
     let totalSkipped = 0;
     let totalErrors = 0;
+    const warnings: string[] = [];
 
     try {
       // ========== PHASE 1: FETCH (fast) ==========
+      // Each source is fetched independently. If one fails, the other still
+      // runs and its results are collected. Only if ALL sources fail do we
+      // enter the error state and skip phases 2+3.
       console.log("[AutoFetch] Phase 1: Fetching news...");
 
-      // Step 1a: Fetch from Google News RSS
-      console.log("[AutoFetch] Fetching from Google News...");
-      const googleNewsRes = await fetch("/api/news/googlenews", { method: "POST" });
-      if (!googleNewsRes.ok) {
-        const data = await googleNewsRes.json();
-        throw new Error(data.error || "Failed to fetch from Google News");
-      }
-      const googleNewsData = await googleNewsRes.json();
-      totalInserted += googleNewsData.data?.inserted ?? 0;
-      totalSkipped += googleNewsData.data?.skipped ?? 0;
-      totalErrors += googleNewsData.data?.errors?.length ?? 0;
+      // Step 1a: Fetch from Google News RSS (errors collected, not thrown)
+      let googleNewsOk = false;
+      try {
+        console.log("[AutoFetch] Fetching from Google News...");
+        const googleNewsRes = await fetch("/api/news/googlenews", { method: "POST" });
+        const googleNewsData = await googleNewsRes.json();
 
-      // Step 1b: Fetch from RSS feeds
-      console.log("[AutoFetch] Fetching from RSS feeds...");
-      const rssRes = await fetch("/api/news/rss", { method: "POST" });
-      if (!rssRes.ok) {
-        const data = await rssRes.json();
-        throw new Error(data.error || "Failed to fetch RSS feeds");
-      }
-      const rssData = await rssRes.json();
-      totalInserted += rssData.data?.inserted ?? 0;
-      totalSkipped += rssData.data?.skipped ?? 0;
-      totalErrors += rssData.data?.errors?.length ?? 0;
+        if (!googleNewsRes.ok) {
+          const msg = googleNewsData.error || "Gagal mengambil dari Google News";
+          warnings.push(`Google News: ${msg}`);
+          console.warn("[AutoFetch] Google News failed:", msg);
+        }
 
-      // Update state after fetch
+        // Always accumulate results — API routes return data even on 400
+        totalInserted += googleNewsData.data?.inserted ?? 0;
+        totalSkipped += googleNewsData.data?.skipped ?? 0;
+
+        // Collect per-source warnings from the API
+        const sourceErrors: string[] = googleNewsData.data?.errors ?? [];
+        totalErrors += sourceErrors.length;
+        if (googleNewsRes.ok && sourceErrors.length > 0) {
+          warnings.push(...sourceErrors.map((e: string) => `Google News: ${e}`));
+        }
+
+        googleNewsOk = googleNewsRes.ok;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Google News fetch gagal";
+        warnings.push(`Google News: ${msg}`);
+        totalErrors++;
+        console.error("[AutoFetch] Google News error:", err);
+      }
+
+      // Step 1b: Fetch from RSS feeds (always runs, regardless of Google News result)
+      let rssOk = false;
+      try {
+        console.log("[AutoFetch] Fetching from RSS feeds...");
+        const rssRes = await fetch("/api/news/rss", { method: "POST" });
+        const rssData = await rssRes.json();
+
+        if (!rssRes.ok) {
+          const msg = rssData.error || "Gagal mengambil RSS feeds";
+          warnings.push(`RSS: ${msg}`);
+          console.warn("[AutoFetch] RSS failed:", msg);
+        }
+
+        // Always accumulate results
+        totalInserted += rssData.data?.inserted ?? 0;
+        totalSkipped += rssData.data?.skipped ?? 0;
+
+        // Collect per-source warnings from the API
+        const sourceErrors: string[] = rssData.data?.errors ?? [];
+        totalErrors += sourceErrors.length;
+        if (rssRes.ok && sourceErrors.length > 0) {
+          warnings.push(...sourceErrors.map((e: string) => `RSS: ${e}`));
+        }
+
+        rssOk = rssRes.ok;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "RSS fetch gagal";
+        warnings.push(`RSS: ${msg}`);
+        totalErrors++;
+        console.error("[AutoFetch] RSS error:", err);
+      }
+
+      // Both sources failed completely — enter error state, skip decode + analyze
+      if (!googleNewsOk && !rssOk) {
+        throw new Error(
+          warnings.length > 0
+            ? warnings.join("; ")
+            : "Gagal mengambil berita dari semua sumber",
+        );
+      }
+
+      // At least one source succeeded (possibly with partial warnings)
       const now = new Date();
       setLastFetchAt(now);
-      setLastFetchResult({ inserted: totalInserted, skipped: totalSkipped, errors: totalErrors });
+      setLastFetchResult({ inserted: totalInserted, skipped: totalSkipped, errors: totalErrors, warnings });
       setNextFetchAt(new Date(now.getTime() + FETCH_INTERVAL_MS));
       saveLastFetchTime(now);
 
-      console.log(`[AutoFetch] Phase 1 complete: ${totalInserted} inserted, ${totalSkipped} skipped`);
+      console.log(`[AutoFetch] Phase 1 complete: ${totalInserted} inserted, ${totalSkipped} skipped, ${warnings.length} warnings`);
 
       // Refresh dashboard data
       await mutate(
@@ -282,6 +353,7 @@ export function AutoFetchProvider({ children }: Readonly<AutoFetchProviderProps>
     } catch (err) {
       console.error("[AutoFetch] Fetch error:", err);
       setLastError(err instanceof Error ? err.message : "Unknown error");
+      setLastFetchResult({ inserted: totalInserted, skipped: totalSkipped, errors: totalErrors, warnings });
       setStatus("error");
 
       // Still update next fetch time so we continue the schedule
@@ -382,11 +454,12 @@ export function AutoFetchProvider({ children }: Readonly<AutoFetchProviderProps>
   }, []);
 
   /**
-   * Manual trigger function
+   * Manual trigger — skips the 55-minute minimum gap check.
+   * Used by FetchNewsButton and AutoFetchIndicator's "Ambil Sekarang" button.
+   * Still respects the concurrency guard (won't run if another fetch is in progress).
    */
   const triggerFetchNow = React.useCallback(async () => {
-    // Reset the minimum gap check for manual triggers
-    await performFetch();
+    await performFetch({ skipGapCheck: true });
   }, [performFetch]);
 
   const value = React.useMemo(

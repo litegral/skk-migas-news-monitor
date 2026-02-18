@@ -23,6 +23,7 @@ export interface AnalysisResult {
   summary: string;
   sentiment: Sentiment;
   categories: string[];
+  reason: string;
 }
 
 /** Result type for analyzeArticle with error handling */
@@ -60,10 +61,12 @@ Analyze the provided news article and return a JSON object with exactly these fi
    - "Teknologi" (inovasi, transformasi digital)
    - "Umum" (lain-lain)
 
+4. "reason": A brief 1-2 sentence explanation in Indonesian of why you chose this sentiment. Explain the key factors from the article content that determined whether the news is positive, negative, or neutral for the oil & gas sector.
+
 Return ONLY valid JSON. No markdown formatting, no code fences, no explanations outside the JSON.
 
 Example output:
-{"summary":"SKK Migas melaporkan peningkatan produksi minyak mentah sebesar 5% di wilayah Kalimantan Timur selama Q1 2026. Peningkatan ini didorong oleh keberhasilan program enhanced oil recovery di beberapa blok migas.","sentiment":"positive","categories":["Produksi","Teknologi"]}`;
+{"summary":"SKK Migas melaporkan peningkatan produksi minyak mentah sebesar 5% di wilayah Kalimantan Timur selama Q1 2026. Peningkatan ini didorong oleh keberhasilan program enhanced oil recovery di beberapa blok migas.","sentiment":"positive","categories":["Produksi","Teknologi"],"reason":"Berita ini positif karena melaporkan peningkatan produksi minyak sebesar 5% yang menunjukkan keberhasilan program EOR, menguntungkan SKK Migas dan sektor migas secara keseluruhan."}`;
 
 /**
  * Analyze a single article using the SiliconFlow LLM.
@@ -254,7 +257,12 @@ function parseAnalysisResponse(raw: string): AnalysisResult | null {
       categories.push("Umum");
     }
 
-    return { summary, sentiment, categories };
+    // Validate reason (optional — fallback to empty string if LLM omits it)
+    const reason = typeof parsed.reason === "string"
+      ? parsed.reason.trim()
+      : "";
+
+    return { summary, sentiment, categories, reason };
   } catch (err) {
     console.error("[llm] Failed to parse LLM response:", err, "\nRaw:", raw);
     return null;

@@ -49,6 +49,12 @@ export interface Article {
   /** Whether the article URL has been decoded (Google News URLs need decoding). */
   urlDecoded?: boolean;
 
+  /** Whether URL decoding failed (article still marked decoded to prevent retries). */
+  decodeFailed?: boolean;
+
+  /** LLM's explanation for why it chose the sentiment/categories. */
+  aiReason?: string | null;
+
   /** Timestamps from database. */
   createdAt?: string;
   updatedAt?: string;
