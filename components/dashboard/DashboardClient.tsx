@@ -56,10 +56,8 @@ import { SentimentChart } from "@/components/dashboard/SentimentChart";
 import { SentimentPieChart } from "@/components/dashboard/SentimentPieChart";
 import { SourcesBarList } from "@/components/dashboard/SourcesBarList";
 import { CategoryChart } from "@/components/dashboard/CategoryChart";
-import { AnalyzeButton } from "@/components/dashboard/AnalyzeButton";
-import { FetchNewsButton } from "@/components/dashboard/FetchNewsButton";
-import { AnalysisProgress } from "@/components/dashboard/AnalysisProgress";
-import { AutoFetchIndicator } from "@/components/dashboard/AutoFetchIndicator";
+import { SyncButton } from "@/components/dashboard/SyncButton";
+import { SyncStatusIndicator } from "@/components/dashboard/SyncStatusIndicator";
 import { ArticleFeed } from "@/components/news/ArticleFeed";
 
 interface DashboardClientProps {
@@ -89,9 +87,6 @@ export function DashboardClient({ initialData }: Readonly<DashboardClientProps>)
       // Ignore localStorage errors
     }
   }, [period]);
-
-  // Track fetch state to disable analyze button during fetch
-  const [isFetching, setIsFetching] = React.useState(false);
 
   // Dashboard layout state (loaded from localStorage)
   const [layout, setLayout] = React.useState<DashboardLayout>(() =>
@@ -194,11 +189,9 @@ export function DashboardClient({ initialData }: Readonly<DashboardClientProps>)
             Pemantauan berita untuk SKK Migas Kalsul.
           </p>
         </div>
-        <div className="flex flex-wrap items-start gap-3">
-          <AnalysisProgress />
-          <AnalyzeButton isFetching={isFetching} period={period} />
-          <FetchNewsButton onFetchingChange={setIsFetching} />
-          <AutoFetchIndicator />
+        <div className="flex flex-wrap items-center gap-3">
+          <SyncButton period={period} />
+          <SyncStatusIndicator />
         </div>
       </div>
 
@@ -294,6 +287,7 @@ export function DashboardClient({ initialData }: Readonly<DashboardClientProps>)
         <Card>
           <ArticleFeed
             articles={dashboardData.articles}
+            topicMap={dashboardData.topicMap}
             availableTopics={dashboardData.availableTopics}
           />
         </Card>

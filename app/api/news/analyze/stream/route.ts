@@ -78,7 +78,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     // (Google News articles need URL decoding before we can crawl them)
     const { data: articles, error: fetchError } = await supabase
       .from("articles")
-      .select("id, title, link, snippet")
+      .select("id, title, link, decoded_url, snippet")
       .eq("user_id", user.id)
       .eq("ai_processed", false)
       .eq("url_decoded", true)
@@ -135,20 +135,20 @@ export async function GET(request: NextRequest): Promise<Response> {
 
           try {
             // 1. Crawl full content (required — skip analysis if crawl fails)
-            const crawlResult = await crawlArticleContent(article.link);
+            // Use decoded_url for Google News articles, fall back to link for RSS
+            const crawlUrl = article.decoded_url || article.link;
+            const crawlResult = await crawlArticleContent(crawlUrl);
             const content = crawlResult.data;
 
             if (!content) {
               const crawlError = crawlResult.error || "Konten artikel tidak dapat diambil";
               console.warn(`[stream] Crawl failed for "${article.title}", skipping analysis: ${crawlError}`);
 
-              // Mark as processed with error — don't attempt LLM without content
+              // Store error but leave ai_processed=false for retry later
               await supabase
                 .from("articles")
                 .update({
-                  ai_processed: true,
                   ai_error: `Crawl gagal: ${crawlError}`,
-                  ai_processed_at: now,
                 })
                 .eq("id", article.id);
 

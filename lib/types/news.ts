@@ -23,6 +23,8 @@ export interface Article {
   id?: string;
   title: string;
   link: string;
+  /** Decoded URL for Google News articles. Use for crawling. */
+  decodedUrl?: string | null;
   snippet: string | null;
   photoUrl: string | null;
   sourceName: string | null;
@@ -43,8 +45,8 @@ export interface Article {
   /** Full crawled article content (from Crawl4AI). */
   fullContent?: string | null;
 
-  /** Array of topic names that this article matched against. */
-  matchedTopics?: string[];
+  /** Array of topic IDs (UUIDs) that this article matched against. */
+  matchedTopicIds?: string[];
 
   /** Whether the article URL has been decoded (Google News URLs need decoding). */
   urlDecoded?: boolean;
@@ -70,15 +72,6 @@ export interface RSSFeed {
   updatedAt: string;
 }
 
-/** A user-configured search query for the RapidAPI news endpoint. */
-export interface SearchQuery {
-  id: string;
-  query: string;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
 /** A user-configured topic for filtering articles. */
 export interface Topic {
   id: string;
@@ -86,6 +79,8 @@ export interface Topic {
   /** Keywords for OR-based matching. If empty, topic name is used. */
   keywords: string[];
   enabled: boolean;
+  /** When this topic was last fetched. NULL = never fetched (triggers 7-day lookback). */
+  lastFetchedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

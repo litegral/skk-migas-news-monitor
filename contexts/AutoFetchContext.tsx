@@ -4,7 +4,7 @@
  * AutoFetchContext provides automatic AND manual news fetching.
  *
  * This is the **single source of truth** for all news fetching in the app.
- * Both the automatic hourly schedule and the manual FetchNewsButton delegate
+ * Both the automatic hourly schedule and the manual SyncButton delegate
  * to this context's `performFetch()` pipeline.
  *
  * Features:
@@ -455,7 +455,7 @@ export function AutoFetchProvider({ children }: Readonly<AutoFetchProviderProps>
 
   /**
    * Manual trigger — skips the 55-minute minimum gap check.
-   * Used by FetchNewsButton and AutoFetchIndicator's "Ambil Sekarang" button.
+   * Used by SyncButton and SyncStatusIndicator's "Ambil Sekarang" button.
    * Still respects the concurrency guard (won't run if another fetch is in progress).
    */
   const triggerFetchNow = React.useCallback(async () => {

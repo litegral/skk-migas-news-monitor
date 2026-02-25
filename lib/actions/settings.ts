@@ -185,156 +185,6 @@ export async function deleteRSSFeed(id: string): Promise<ActionResult> {
 }
 
 // ============================================================================
-// Search Queries Actions
-// ============================================================================
-
-export async function addSearchQuery(query: string): Promise<ActionResult> {
-  try {
-    // Validate query
-    const queryValidation = validateString(query, "Search query", {
-      minLength: 1,
-      maxLength: 200,
-    });
-    if (!queryValidation.valid) {
-      return { success: false, error: queryValidation.error };
-    }
-
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "Not authenticated" };
-    }
-
-    const { error } = await supabase.from("search_queries").insert({
-      user_id: user.id,
-      query: queryValidation.value!,
-      enabled: true,
-    });
-
-    if (error) {
-      if (error.code === "23505") {
-        return { success: false, error: "This query already exists" };
-      }
-      console.error("[settings] addSearchQuery error:", error.message);
-      return { success: false, error: "Failed to add query" };
-    }
-
-    revalidatePath("/settings");
-    return { success: true };
-  } catch (err) {
-    console.error("[settings] addSearchQuery error:", err);
-    return { success: false, error: "Failed to add query" };
-  }
-}
-
-export async function updateSearchQuery(
-  id: string,
-  data: { query?: string; enabled?: boolean },
-): Promise<ActionResult> {
-  try {
-    // Validate ID
-    const idValidation = validateUuid(id, "Query ID");
-    if (!idValidation.valid) {
-      return { success: false, error: idValidation.error };
-    }
-
-    // Validate optional fields
-    const updateData: Record<string, unknown> = {};
-
-    if (data.query !== undefined) {
-      const queryValidation = validateString(data.query, "Search query", {
-        minLength: 1,
-        maxLength: 200,
-      });
-      if (!queryValidation.valid) {
-        return { success: false, error: queryValidation.error };
-      }
-      updateData.query = queryValidation.value;
-    }
-
-    if (data.enabled !== undefined) {
-      if (typeof data.enabled !== "boolean") {
-        return { success: false, error: "Enabled must be a boolean" };
-      }
-      updateData.enabled = data.enabled;
-    }
-
-    // Check if there's anything to update
-    if (Object.keys(updateData).length === 0) {
-      return { success: false, error: "No valid fields to update" };
-    }
-
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "Not authenticated" };
-    }
-
-    const { error } = await supabase
-      .from("search_queries")
-      .update(updateData)
-      .eq("id", idValidation.value!)
-      .eq("user_id", user.id);
-
-    if (error) {
-      if (error.code === "23505") {
-        return { success: false, error: "This query already exists" };
-      }
-      console.error("[settings] updateSearchQuery error:", error.message);
-      return { success: false, error: "Failed to update query" };
-    }
-
-    revalidatePath("/settings");
-    return { success: true };
-  } catch (err) {
-    console.error("[settings] updateSearchQuery error:", err);
-    return { success: false, error: "Failed to update query" };
-  }
-}
-
-export async function deleteSearchQuery(id: string): Promise<ActionResult> {
-  try {
-    // Validate ID
-    const idValidation = validateUuid(id, "Query ID");
-    if (!idValidation.valid) {
-      return { success: false, error: idValidation.error };
-    }
-
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "Not authenticated" };
-    }
-
-    const { error } = await supabase
-      .from("search_queries")
-      .delete()
-      .eq("id", idValidation.value!)
-      .eq("user_id", user.id);
-
-    if (error) {
-      console.error("[settings] deleteSearchQuery error:", error.message);
-      return { success: false, error: "Failed to delete query" };
-    }
-
-    revalidatePath("/settings");
-    return { success: true };
-  } catch (err) {
-    console.error("[settings] deleteSearchQuery error:", err);
-    return { success: false, error: "Failed to delete query" };
-  }
-}
-
-// ============================================================================
 // Topics Actions
 // ============================================================================
 
@@ -454,6 +304,8 @@ export async function updateTopic(
         validatedKeywords.push(kwValidation.value!);
       }
       updateData.keywords = validatedKeywords;
+      // Reset last_fetched_at when keywords change so next fetch uses 7-day lookback
+      updateData.last_fetched_at = null;
     }
 
     // Check if there's anything to update
@@ -509,6 +361,19 @@ export async function deleteTopic(id: string): Promise<ActionResult> {
       return { success: false, error: "Not authenticated" };
     }
 
+    // 1. Remove this topic ID from all articles' matched_topic_ids arrays
+    // Use PostgreSQL array_remove function via RPC (created in migration 007)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: cleanupError } = await (supabase as any).rpc("remove_topic_from_articles", {
+      p_topic_id: idValidation.value!,
+      p_user_id: user.id,
+    });
+
+    if (cleanupError) {
+      console.warn("[settings] Could not clean up article topics:", cleanupError.message);
+    }
+
+    // 2. Delete the topic
     const { error } = await supabase
       .from("topics")
       .delete()
@@ -521,6 +386,7 @@ export async function deleteTopic(id: string): Promise<ActionResult> {
     }
 
     revalidatePath("/settings");
+    revalidatePath("/dashboard");
     return { success: true };
   } catch (err) {
     console.error("[settings] deleteTopic error:", err);

@@ -26,6 +26,8 @@ import type { Article } from "@/lib/types/news";
 interface ExportButtonProps {
   /** Articles to export (should be the current filtered view) */
   articles: Article[];
+  /** Map of topic ID → topic name for resolving matchedTopicIds */
+  topicMap?: Record<string, string>;
 }
 
 /** Month option for dropdown */
@@ -74,7 +76,7 @@ function sanitizeFilename(str: string): string {
     .replace(/[^a-z0-9-]/g, "");
 }
 
-export function ExportButton({ articles }: Readonly<ExportButtonProps>) {
+export function ExportButton({ articles, topicMap }: Readonly<ExportButtonProps>) {
   const [isExporting, setIsExporting] = useState(false);
 
   // Generate month options (last 6 months)
@@ -109,7 +111,7 @@ export function ExportButton({ articles }: Readonly<ExportButtonProps>) {
       const filename = `berita-skk-migas-${sanitizeFilename(label)}`;
 
       // Export to Excel (async with ExcelJS)
-      await exportArticlesToExcel(articlesToExport, { filename });
+      await exportArticlesToExcel(articlesToExport, { filename, topicMap });
     } catch (error) {
       console.error("[ExportButton] Export failed:", error);
     } finally {

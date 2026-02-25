@@ -69,12 +69,13 @@ export interface GoogleNewsFetchResult {
  * rate limiting.
  *
  * @param query - The search query string (e.g., "SKK Migas Kalsul").
- * @param options.topicName - Topic name to tag articles with (for matched_topics).
+ * @param options.topicId - Topic UUID to tag articles with (for matched_topic_ids).
+ * @param options.topicName - Topic name (for logging).
  * @returns Result object with data array and optional error message.
  */
 export async function fetchGoogleNewsArticles(
   query: string,
-  { topicName }: { topicName?: string } = {},
+  { topicId, topicName }: { topicId?: string; topicName?: string } = {},
 ): Promise<GoogleNewsFetchResult> {
   // Validate query input
   const queryValidation = validateString(query, "Search query", {
@@ -121,7 +122,7 @@ export async function fetchGoogleNewsArticles(
         sentiment: null,
         categories: null,
         aiProcessed: false,
-        matchedTopics: topicName ? [topicName] : [],
+        matchedTopicIds: topicId ? [topicId] : [],
         urlDecoded: false, // Will be decoded in background process
       });
     }

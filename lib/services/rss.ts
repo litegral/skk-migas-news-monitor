@@ -139,7 +139,7 @@ function normalizeItem(
     sentiment: null,
     categories: null,
     aiProcessed: false,
-    matchedTopics: [], // Will be populated by filterArticlesByTopics
+    matchedTopicIds: [], // Will be populated by filterArticlesByTopics
   };
 }
 
@@ -201,6 +201,7 @@ function normalizeDate(raw?: string): string | null {
 // ============================================================================
 
 export interface TopicForFiltering {
+  id: string;
   name: string;
   /** Keywords for OR-based matching. Topics with no keywords are skipped. */
   keywords: string[];
@@ -215,8 +216,8 @@ export interface TopicForFiltering {
  * - Case-insensitive substring matching (exact phrase match)
  *
  * @param articles - Array of articles to filter.
- * @param topics - Array of topics to match against.
- * @returns Filtered articles with matched_topics field populated.
+ * @param topics - Array of topics (with IDs) to match against.
+ * @returns Filtered articles with matched_topic_ids field populated.
  */
 export function filterArticlesByTopics(
   articles: Article[],
@@ -233,7 +234,7 @@ export function filterArticlesByTopics(
   const filteredArticles: Article[] = [];
 
   for (const article of articles) {
-    const matchedTopics: string[] = [];
+    const matchedTopicIds: string[] = [];
 
     // Combine searchable text (title + snippet)
     const searchableText = [
@@ -249,15 +250,15 @@ export function filterArticlesByTopics(
       });
 
       if (matched) {
-        matchedTopics.push(topic.name);
+        matchedTopicIds.push(topic.id);
       }
     }
 
     // Only include articles that matched at least one topic
-    if (matchedTopics.length > 0) {
+    if (matchedTopicIds.length > 0) {
       filteredArticles.push({
         ...article,
-        matchedTopics,
+        matchedTopicIds,
       });
     }
   }

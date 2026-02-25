@@ -164,7 +164,7 @@ export async function decodeAndUpdateArticle(
     const { error } = await supabase
       .from("articles")
       .update({
-        link: cachedUrl,
+        decoded_url: cachedUrl,
         url_decoded: true,
       })
       .eq("id", article.id);
@@ -225,7 +225,7 @@ export async function decodeAndUpdateArticle(
   const { error } = await supabase
     .from("articles")
     .update({
-      link: decodedUrl,
+      decoded_url: decodedUrl,
       url_decoded: true,
     })
     .eq("id", article.id);

@@ -17,6 +17,7 @@ function toArticle(row: ArticleRow): Article {
     id: row.id,
     title: row.title,
     link: row.link,
+    decodedUrl: row.decoded_url,
     snippet: row.snippet,
     photoUrl: row.photo_url,
     sourceName: row.source_name,
@@ -30,7 +31,10 @@ function toArticle(row: ArticleRow): Article {
     aiError: row.ai_error,
     aiProcessedAt: row.ai_processed_at,
     fullContent: row.full_content,
-    matchedTopics: row.matched_topics ?? [],
+    matchedTopicIds: row.matched_topic_ids ?? [],
+    urlDecoded: row.url_decoded,
+    decodeFailed: row.decode_failed,
+    aiReason: row.ai_reason,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -45,16 +49,30 @@ export default async function DashboardPage() {
     .select("*")
     .order("published_at", { ascending: false });
 
-  // Fetch enabled topics for filtering
+  // Fetch enabled topics with IDs for filtering and name resolution
   const { data: topicsData } = await supabase
     .from("topics")
-    .select("name")
+    .select("id, name")
     .eq("enabled", true)
     .order("name", { ascending: true });
 
+  // Build topic map (id → name) and set of active topic IDs
+  const topicMap: Record<string, string> = {};
+  const activeTopicIds = new Set<string>();
+  for (const topic of topicsData ?? []) {
+    topicMap[topic.id] = topic.name;
+    activeTopicIds.add(topic.id);
+  }
+  const availableTopics = Object.values(topicMap).sort();
+
+  // Convert and filter articles: only include those matching at least one active topic
   const articleRows = articlesData ?? [];
-  const articles = articleRows.map(toArticle);
-  const availableTopics = topicsData?.map((t) => t.name) ?? [];
+  const articles = articleRows
+    .map(toArticle)
+    .filter((article) => {
+      if (!article.matchedTopicIds || article.matchedTopicIds.length === 0) return false;
+      return article.matchedTopicIds.some((id) => activeTopicIds.has(id));
+    });
 
   // Compute KPI data
   const totalArticles = articles.length;
@@ -175,7 +193,7 @@ export default async function DashboardPage() {
     .slice(0, 10); // Top 10
 
   // Build initial data for SWR fallback
-  // Pass ALL articles - ArticleFeed handles pagination client-side
+  // Pass filtered articles - ArticleFeed handles pagination client-side
   const initialData: DashboardData = {
     articles,
     totalArticles,
@@ -194,6 +212,7 @@ export default async function DashboardPage() {
     sourcesData,
     allSourcesData,
     categoryData,
+    topicMap,
     availableTopics,
     pendingCount,
     period: "3m", // Default period for server-side render

@@ -13,12 +13,19 @@ import { cx } from "@/lib/utils";
 
 interface ArticleCardProps {
   article: Article;
+  /** Map of topic ID → topic name for resolving matchedTopicIds */
+  topicMap?: Record<string, string>;
 }
 
-export function ArticleCard({ article }: Readonly<ArticleCardProps>) {
+export function ArticleCard({ article, topicMap }: Readonly<ArticleCardProps>) {
   const publishedDate = article.publishedAt
     ? formatDistanceToNow(new Date(article.publishedAt), { addSuffix: true })
     : null;
+
+  // Resolve topic IDs to names
+  const topicNames = article.matchedTopicIds
+    ?.map((id) => topicMap?.[id])
+    .filter((name): name is string => Boolean(name)) ?? [];
 
   return (
     <Card className="flex flex-col gap-4 p-4 sm:flex-row">
@@ -40,7 +47,7 @@ export function ArticleCard({ article }: Readonly<ArticleCardProps>) {
         {/* Title + external link */}
         <div className="flex items-start gap-2">
           <a
-            href={article.link}
+            href={article.decodedUrl || article.link}
             target="_blank"
             rel="noopener noreferrer"
             className="group flex-1"
@@ -50,7 +57,7 @@ export function ArticleCard({ article }: Readonly<ArticleCardProps>) {
             </h3>
           </a>
           <a
-            href={article.link}
+            href={article.decodedUrl || article.link}
             target="_blank"
             rel="noopener noreferrer"
             className="shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
@@ -75,23 +82,23 @@ export function ArticleCard({ article }: Readonly<ArticleCardProps>) {
         </p>
 
         {/* Matched topics */}
-        {article.matchedTopics && article.matchedTopics.length > 0 && (
+        {topicNames.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             <RiHashtag className="size-3 text-gray-400" />
-            {article.matchedTopics.slice(0, 3).map((topic) => (
+            {topicNames.slice(0, 3).map((name) => (
               <span
-                key={topic}
+                key={name}
                 className={cx(
                   "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
                   "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
                 )}
               >
-                {topic}
+                {name}
               </span>
             ))}
-            {article.matchedTopics.length > 3 && (
+            {topicNames.length > 3 && (
               <span className="text-xs text-gray-400">
-                +{article.matchedTopics.length - 3} lainnya
+                +{topicNames.length - 3} lainnya
               </span>
             )}
           </div>

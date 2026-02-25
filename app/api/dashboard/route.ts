@@ -62,7 +62,7 @@ export interface SentimentPieData {
 
 /** Complete dashboard data response */
 export interface DashboardData {
-  /** All articles for the feed (not filtered by period) */
+  /** All articles for the feed (not filtered by period, but filtered by active topics) */
   articles: Article[];
   /** Total count of all articles */
   totalArticles: number;
@@ -74,6 +74,9 @@ export interface DashboardData {
   /** All sources for modal view */
   allSourcesData: SourceData[];
   categoryData: CategoryData[];
+  /** Map of topic ID → topic name for resolving matchedTopicIds */
+  topicMap: Record<string, string>;
+  /** List of active topic names (for filter dropdown) */
   availableTopics: string[];
   pendingCount: number;
   period: DashboardPeriod;
@@ -85,6 +88,7 @@ function toArticle(row: ArticleRow): Article {
     id: row.id,
     title: row.title,
     link: row.link,
+    decodedUrl: row.decoded_url,
     snippet: row.snippet,
     photoUrl: row.photo_url,
     sourceName: row.source_name,
@@ -98,7 +102,7 @@ function toArticle(row: ArticleRow): Article {
     aiError: row.ai_error,
     aiProcessedAt: row.ai_processed_at,
     fullContent: row.full_content,
-    matchedTopics: row.matched_topics ?? [],
+    matchedTopicIds: row.matched_topic_ids ?? [],
     urlDecoded: row.url_decoded,
     decodeFailed: row.decode_failed,
     aiReason: row.ai_reason,
@@ -126,22 +130,37 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
       );
     }
 
-    // Fetch all articles for the current user
+    // Fetch all articles for the current user (no topic filter yet - we filter after)
     const { data: articlesData } = await supabase
       .from("articles")
       .select("*")
       .order("published_at", { ascending: false });
 
-    // Fetch enabled topics for filtering
+    // Fetch enabled topics with IDs for filtering and name resolution
     const { data: topicsData } = await supabase
       .from("topics")
-      .select("name")
+      .select("id, name")
       .eq("enabled", true)
       .order("name", { ascending: true });
 
+    // Build topic map (id → name) and set of active topic IDs
+    const topicMap: Record<string, string> = {};
+    const activeTopicIds = new Set<string>();
+    for (const topic of topicsData ?? []) {
+      topicMap[topic.id] = topic.name;
+      activeTopicIds.add(topic.id);
+    }
+    const availableTopics = Object.values(topicMap).sort();
+
+    // Convert and filter articles: only include those matching at least one active topic
     const articleRows = articlesData ?? [];
-    const allArticles = articleRows.map(toArticle);
-    const availableTopics = topicsData?.map((t) => t.name) ?? [];
+    const allArticles = articleRows
+      .map(toArticle)
+      .filter((article) => {
+        // Include article if any of its matchedTopicIds are in activeTopicIds
+        if (!article.matchedTopicIds || article.matchedTopicIds.length === 0) return false;
+        return article.matchedTopicIds.some((id) => activeTopicIds.has(id));
+      });
 
     // Filter articles by period for chart calculations
     const cutoffDate = getPeriodCutoffDate(period);
@@ -294,7 +313,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
       .sort((a, b) => b.count - a.count)
       .slice(0, 10); // Top 10
 
-    // Return ALL articles for the feed (not filtered by period)
+    // Return filtered articles for the feed (not filtered by period)
     // Period filtering only applies to charts/KPIs
     // ArticleFeed component handles pagination client-side
     return NextResponse.json({
@@ -307,6 +326,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
         sourcesData,
         allSourcesData,
         categoryData,
+        topicMap,
         availableTopics,
         pendingCount,
         period,

@@ -17,7 +17,9 @@ import { cx } from "@/lib/utils";
 
 interface ArticleFeedProps {
   articles: Article[];
-  /** List of all available topics for filtering. */
+  /** Map of topic ID → topic name for resolving matchedTopicIds */
+  topicMap?: Record<string, string>;
+  /** List of all available topic names for filtering. */
   availableTopics?: string[];
   /** Number of articles per page (default: 10). */
   pageSize?: number;
@@ -31,6 +33,7 @@ const DEFAULT_PAGE_SIZE = 10;
 
 export function ArticleFeed({
   articles,
+  topicMap = {},
   availableTopics = [],
   pageSize = DEFAULT_PAGE_SIZE,
 }: Readonly<ArticleFeedProps>) {
@@ -42,15 +45,22 @@ export function ArticleFeed({
   const [showFilters, setShowFilters] = React.useState(false);
   const [currentPage, setCurrentPage] = React.useState(1);
 
-  // Derive unique topics from articles if not provided
+  // Helper: get topic names for an article
+  const getTopicNames = (article: Article): string[] => {
+    return article.matchedTopicIds
+      ?.map((id) => topicMap[id])
+      .filter((name): name is string => Boolean(name)) ?? [];
+  };
+
+  // Derive unique topics from availableTopics or from articles
   const allTopics = React.useMemo(() => {
     if (availableTopics.length > 0) return availableTopics;
     const topicSet = new Set<string>();
     articles.forEach((article) => {
-      article.matchedTopics?.forEach((topic) => topicSet.add(topic));
+      getTopicNames(article).forEach((name) => topicSet.add(name));
     });
     return Array.from(topicSet).sort();
-  }, [articles, availableTopics]);
+  }, [articles, availableTopics, topicMap]);
 
   // Filter and sort articles
   const filteredArticles = React.useMemo(() => {
@@ -77,11 +87,10 @@ export function ArticleFeed({
 
     // Topic filter (article must match ALL selected topics)
     if (selectedTopics.length > 0) {
-      result = result.filter((article) =>
-        selectedTopics.every((topic) =>
-          article.matchedTopics?.includes(topic),
-        ),
-      );
+      result = result.filter((article) => {
+        const names = getTopicNames(article);
+        return selectedTopics.every((topic) => names.includes(topic));
+      });
     }
 
     // Sort
@@ -92,7 +101,7 @@ export function ArticleFeed({
     });
 
     return result;
-  }, [articles, search, sortBy, sentimentFilter, selectedTopics]);
+  }, [articles, search, sortBy, sentimentFilter, selectedTopics, topicMap]);
 
   // Reset to page 1 when filters change
   React.useEffect(() => {
@@ -194,7 +203,7 @@ export function ArticleFeed({
               </span>
             )}
           </Button>
-          <ExportButton articles={filteredArticles} />
+          <ExportButton articles={filteredArticles} topicMap={topicMap} />
         </div>
       </div>
 
@@ -298,7 +307,7 @@ export function ArticleFeed({
       <div className="flex flex-col gap-3">
         {paginatedArticles.length > 0 ? (
           paginatedArticles.map((article) => (
-            <ArticleCard key={article.id ?? article.link} article={article} />
+            <ArticleCard key={article.id ?? article.link} article={article} topicMap={topicMap} />
           ))
         ) : (
           <div className="flex h-32 items-center justify-center rounded-md border border-dashed border-gray-300 dark:border-gray-700">
