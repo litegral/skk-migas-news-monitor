@@ -110,7 +110,7 @@ export function LoginForm() {
         type="submit"
         className="w-full"
         isLoading={isLoading}
-        loadingText="Masuk..."
+        loadingText="Sign in..."
       >
         Sign in
       </Button>

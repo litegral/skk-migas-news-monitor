@@ -2,34 +2,28 @@
 
 /**
  * DashboardClient is the client-side component that renders the dashboard UI.
- * Uses SWR for reactive data fetching with auto-revalidation when
- * background analysis completes.
- *
- * Visual hierarchy:
- * - Ringkasan section (period-dependent data with period selector)
- *   - Settings icon to toggle edit mode for drag/resize
- * - Artikel Terbaru section (independent, always shows recent articles)
+ * Now acts as a shell for Server Components, managing the layout state and period routing.
  */
 
-import React from "react";
+import React, { useTransition } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   RiSettings3Line,
   RiEditLine,
   RiCheckLine,
   RiRefreshLine,
+  RiLoader4Line
 } from "@remixicon/react";
-import { useDashboardData } from "@/lib/hooks/useDashboardData";
-import type { DashboardData } from "@/app/api/dashboard/route";
+
+import type { Article } from "@/lib/types/news";
 import type { DashboardPeriod } from "@/lib/types/dashboard";
-import { DEFAULT_PERIOD, PERIOD_OPTIONS } from "@/lib/types/dashboard";
+import { PERIOD_OPTIONS } from "@/lib/types/dashboard";
 import type { DashboardLayout } from "@/lib/types/dashboard-layout";
 import {
   loadDashboardLayout,
   saveDashboardLayout,
   resetDashboardLayout,
 } from "@/lib/utils/dashboardLayout";
-
-const PERIOD_STORAGE_KEY = "skkmigas-dashboard-period";
 
 // UI components
 import {
@@ -51,42 +45,33 @@ import { cx } from "@/lib/utils";
 
 // Dashboard components
 import { WidgetGrid } from "@/components/dashboard/WidgetGrid";
-import { KPICard } from "@/components/dashboard/KPICard";
-import { SentimentChart } from "@/components/dashboard/SentimentChart";
-import { SentimentPieChart } from "@/components/dashboard/SentimentPieChart";
-import { SourcesBarList } from "@/components/dashboard/SourcesBarList";
-import { CategoryChart } from "@/components/dashboard/CategoryChart";
 import { SyncButton } from "@/components/dashboard/SyncButton";
 import { SyncStatusIndicator } from "@/components/dashboard/SyncStatusIndicator";
 import { ArticleFeed } from "@/components/news/ArticleFeed";
 
 interface DashboardClientProps {
-  initialData: DashboardData;
+  widgets: Record<string, React.ReactNode>;
+  period: DashboardPeriod;
+  topicMap: Record<string, string>;
+  availableTopics: string[];
+  pendingCount: number;
+  initialArticles: Article[];
+  totalArticles: number;
 }
 
-export function DashboardClient({ initialData }: Readonly<DashboardClientProps>) {
-  // Period state for filtering dashboard data (persisted to localStorage)
-  const [period, setPeriod] = React.useState<DashboardPeriod>(() => {
-    if (typeof window === "undefined") return initialData.period ?? DEFAULT_PERIOD;
-    try {
-      const saved = localStorage.getItem(PERIOD_STORAGE_KEY);
-      if (saved && PERIOD_OPTIONS.some((o) => o.value === saved)) {
-        return saved as DashboardPeriod;
-      }
-    } catch {
-      // Ignore localStorage errors
-    }
-    return initialData.period ?? DEFAULT_PERIOD;
-  });
-
-  // Persist period to localStorage on change
-  React.useEffect(() => {
-    try {
-      localStorage.setItem(PERIOD_STORAGE_KEY, period);
-    } catch {
-      // Ignore localStorage errors
-    }
-  }, [period]);
+export function DashboardClient({
+  widgets,
+  period,
+  topicMap,
+  availableTopics,
+  pendingCount,
+  initialArticles,
+  totalArticles
+}: Readonly<DashboardClientProps>) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
   // Dashboard layout state (loaded from localStorage)
   const [layout, setLayout] = React.useState<DashboardLayout>(() =>
@@ -96,11 +81,15 @@ export function DashboardClient({ initialData }: Readonly<DashboardClientProps>)
   // Edit mode state (default: off, resets on page refresh)
   const [isEditMode, setIsEditMode] = React.useState(false);
 
-  // Use SWR with period parameter
-  const { data } = useDashboardData({ period, fallbackData: initialData });
+  // Handle period change via Next.js router
+  const handlePeriodChange = (newPeriod: DashboardPeriod) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("period", newPeriod);
 
-  // Use SWR data if available, otherwise fall back to initial data
-  const dashboardData = data ?? initialData;
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`);
+    });
+  };
 
   // Handle layout changes - save to localStorage
   const handleLayoutChange = React.useCallback((newLayout: DashboardLayout) => {
@@ -114,67 +103,28 @@ export function DashboardClient({ initialData }: Readonly<DashboardClientProps>)
     setLayout(defaultLayout);
   }, []);
 
-  // Render widget by ID
+  // Render widget by ID looking up the widgets dict prop
   const renderWidget = React.useCallback(
     (id: string) => {
-      switch (id) {
-        case "kpi-total":
-          return (
-            <KPICard
-              type="total"
-              value={dashboardData.totalArticles}
-              period={period}
-            />
-          );
-        case "kpi-positive":
-          return (
-            <KPICard
-              type="positive"
-              value={dashboardData.sentimentPieData.positive}
-              period={period}
-            />
-          );
-        case "kpi-negative":
-          return (
-            <KPICard
-              type="negative"
-              value={dashboardData.sentimentPieData.negative}
-              period={period}
-            />
-          );
-        case "kpi-neutral":
-          return (
-            <KPICard
-              type="neutral"
-              value={dashboardData.sentimentPieData.neutral}
-              period={period}
-            />
-          );
-        case "sentiment-timeline":
-          return (
-            <SentimentChart data={dashboardData.sentimentData} period={period} />
-          );
-        case "sentiment-pie":
-          return (
-            <SentimentPieChart
-              data={dashboardData.sentimentPieData}
-              period={period}
-            />
-          );
-        case "sources":
-          return (
-            <SourcesBarList
-              data={dashboardData.sourcesData}
-              allSourcesData={dashboardData.allSourcesData}
-            />
-          );
-        case "categories":
-          return <CategoryChart data={dashboardData.categoryData} />;
-        default:
-          return null;
+      // Map grid string IDs to widget Dictionary keys
+      const mapping: Record<string, string> = {
+        "kpi-total": "kpiTotal",
+        "kpi-positive": "kpiPositive",
+        "kpi-negative": "kpiNegative",
+        "kpi-neutral": "kpiNeutral",
+        "sentiment-timeline": "sentimentTimeline",
+        "sentiment-pie": "sentimentPie",
+        "sources": "sources",
+        "categories": "categories"
+      };
+
+      const key = mapping[id];
+      if (key && widgets[key]) {
+        return widgets[key];
       }
+      return null;
     },
-    [dashboardData, period],
+    [widgets]
   );
 
   return (
@@ -182,8 +132,9 @@ export function DashboardClient({ initialData }: Readonly<DashboardClientProps>)
       {/* Page header */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-50 flex items-center gap-2">
             Dashboard
+            {isPending && <RiLoader4Line className="size-5 animate-spin text-blue-500" />}
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             Pemantauan berita untuk SKK Migas Kalsul.
@@ -198,7 +149,7 @@ export function DashboardClient({ initialData }: Readonly<DashboardClientProps>)
       {/* ═══════════════════════════════════════════════════════════════════════
           SECTION: Ringkasan (Period-dependent data)
           ═══════════════════════════════════════════════════════════════════════ */}
-      <section>
+      <section className={cx("transition-opacity duration-300", isPending && "opacity-60")}>
         {/* Section header with settings and period selector */}
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -245,7 +196,7 @@ export function DashboardClient({ initialData }: Readonly<DashboardClientProps>)
             <span className="text-sm text-gray-500 dark:text-gray-400">
               Periode:
             </span>
-            <Select value={period} onValueChange={(v) => setPeriod(v as DashboardPeriod)}>
+            <Select value={period} onValueChange={(v) => handlePeriodChange(v as DashboardPeriod)} disabled={isPending}>
               <SelectTrigger className="w-28">
                 <SelectValue />
               </SelectTrigger>
@@ -286,9 +237,10 @@ export function DashboardClient({ initialData }: Readonly<DashboardClientProps>)
         {/* Article Feed with its own filters */}
         <Card>
           <ArticleFeed
-            articles={dashboardData.articles}
-            topicMap={dashboardData.topicMap}
-            availableTopics={dashboardData.availableTopics}
+            initialArticles={initialArticles}
+            totalArticles={totalArticles}
+            topicMap={topicMap}
+            availableTopics={availableTopics}
           />
         </Card>
       </section>

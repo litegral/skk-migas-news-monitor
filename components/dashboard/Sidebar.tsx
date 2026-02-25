@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   RiDashboardLine,
@@ -34,11 +35,11 @@ export function Sidebar({ className }: Readonly<{ className?: string }>) {
       {/* Logo + collapse button */}
       <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
         <div className="flex items-center gap-2.5">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-blue-500 text-white">
-            <RiFireLine className="size-4" aria-hidden="true" />
+          <div className="flex shrink-0 items-center justify-center bg-transparent">
+            <Image src="/kalsul_logo.jpeg" alt="Logo" width={48} height={48} className="object-contain" />
           </div>
           <span className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-            SKK Migas Monitor
+            SKK Migas Kalsul
           </span>
         </div>
         <button
@@ -117,11 +118,11 @@ export function MobileHeader() {
       {/* Mobile top bar */}
       <header className="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 lg:hidden dark:border-gray-800 dark:bg-gray-950">
         <div className="flex items-center gap-2.5">
-          <div className="flex size-7 items-center justify-center rounded-md bg-blue-500 text-white">
-            <RiOilLine className="size-3.5" aria-hidden="true" />
+          <div className="flex shrink-0 items-center justify-center bg-transparent">
+            <Image src="/kalsul_logo.jpeg" alt="Logo" width={40} height={40} className="object-contain" />
           </div>
           <span className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-            SKK Migas Monitor
+            SKK Migas Kalsul
           </span>
         </div>
         <button

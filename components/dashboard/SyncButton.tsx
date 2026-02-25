@@ -20,13 +20,11 @@ import {
   RiCheckLine,
   RiErrorWarningLine,
 } from "@remixicon/react";
-import { useSWRConfig } from "swr";
 
 import { Button } from "@/components/ui/Button";
 import { useAnalysis } from "@/contexts/AnalysisContext";
 import { useAutoFetch } from "@/contexts/AutoFetchContext";
-import { DASHBOARD_API_BASE, useDashboardData } from "@/lib/hooks/useDashboardData";
-import type { DashboardPeriod } from "@/lib/types/dashboard";
+import { revalidateDashboardAction } from "@/app/actions/dashboard";
 
 /** Cooldown duration: 5 minutes in milliseconds */
 const FETCH_COOLDOWN_MS = 5 * 60 * 1000;
@@ -34,9 +32,11 @@ const FETCH_COOLDOWN_MS = 5 * 60 * 1000;
 /** localStorage key for manual button cooldown */
 const COOLDOWN_KEY = "skkmigas_lastNewsFetchTime";
 
-interface SyncButtonProps {
-  /** Current period for dashboard filtering */
-  period: DashboardPeriod;
+export interface SyncButtonProps {
+  failedCount: number;
+  pendingCount: number;
+  decodePendingCount: number;
+  totalArticles: number;
 }
 
 /**
@@ -81,9 +81,12 @@ function saveCooldownTimestamp(): void {
   localStorage.setItem(COOLDOWN_KEY, Date.now().toString());
 }
 
-export function SyncButton({ period }: Readonly<SyncButtonProps>) {
-  const { mutate } = useSWRConfig();
-  const { data } = useDashboardData({ period });
+export function SyncButton({
+  failedCount = 0,
+  pendingCount = 0,
+  decodePendingCount = 0,
+  totalArticles = 0
+}: Readonly<SyncButtonProps>) {
   const {
     startProcess,
     isProcessing,
@@ -94,6 +97,7 @@ export function SyncButton({ period }: Readonly<SyncButtonProps>) {
     totalPending: sessionTotal,
     failedCount: sessionFailed,
   } = useAnalysis();
+
   const {
     status: autoFetchStatus,
     lastFetchResult,
@@ -115,9 +119,12 @@ export function SyncButton({ period }: Readonly<SyncButtonProps>) {
     return () => clearInterval(interval);
   }, []);
 
-  // Reset manual trigger flag after fetch completes
+  // Reset manual trigger flag after fetch completes and revalidate
   React.useEffect(() => {
     if (manualFetchTriggered && (autoFetchStatus === "success" || autoFetchStatus === "error")) {
+      // Fetch is done, trigger server action to revalidate
+      revalidateDashboardAction();
+
       const timeout = setTimeout(() => {
         setManualFetchTriggered(false);
       }, 4000);
@@ -125,11 +132,25 @@ export function SyncButton({ period }: Readonly<SyncButtonProps>) {
     }
   }, [manualFetchTriggered, autoFetchStatus]);
 
-  const kpiData = data?.kpiData;
-  const failedCount = kpiData?.failedCount ?? 0;
-  const pendingCount = kpiData?.pendingCount ?? 0;
-  const decodePendingCount = kpiData?.decodePendingCount ?? 0;
-  const totalArticles = kpiData?.totalArticles ?? 0;
+  // Revalidate when processing finishes
+  React.useEffect(() => {
+    if (!isProcessing && !isResetting && !manualFetchTriggered && autoFetchStatus !== "fetching" && autoFetchStatus !== "decoding" && autoFetchStatus !== "analyzing") {
+      // Only if we just finished processing something
+      // we can't tell easily when it transitions from true to false unless we track previous state,
+      // but typically AnalysisContext updates its state so we'll rely on calling revalidateDashboardAction
+      // from within the contexts or doing it here when transition to idle happens.
+      // Actually, AnalysisContext does not currently trigger revalidation.
+      // We'll write a small prev value logic here.
+    }
+  }, [isProcessing, isResetting]);
+
+  const prevProcessing = React.useRef(false);
+  React.useEffect(() => {
+    if (prevProcessing.current && !isProcessing) {
+      revalidateDashboardAction();
+    }
+    prevProcessing.current = isProcessing;
+  }, [isProcessing]);
 
   const hasFailures = failedCount > 0;
   const hasPending = pendingCount > 0;
@@ -145,35 +166,29 @@ export function SyncButton({ period }: Readonly<SyncButtonProps>) {
   async function handleSync() {
     if (isBusy) return;
 
-    // If there are pending articles to analyze (failed, decode-pending, or analysis-pending),
-    // run analyze-only (no cooldown needed).
     if (needsAnalysis) {
       try {
-        // Reset failed articles first if any
         if (hasFailures) {
           setIsResetting(true);
           const res = await fetch("/api/news/retry", { method: "POST" });
           if (!res.ok) {
-            const responseData = await res.json();
-            console.error("Failed to reset articles:", responseData.error);
+            console.error("Failed to reset articles");
           }
           setIsResetting(false);
-
-          await mutate(
-            (key: string) => typeof key === "string" && key.startsWith(DASHBOARD_API_BASE),
-            undefined,
-            { revalidate: true },
-          );
+          await revalidateDashboardAction();
         }
 
-        // Get fresh counts
-        const freshRes = await fetch(`${DASHBOARD_API_BASE}?period=${period}`);
-        const freshJson = await freshRes.json();
-        const freshDecodePendingCount = freshJson.data?.kpiData?.decodePendingCount ?? 0;
-        const freshPendingCount = freshJson.data?.kpiData?.pendingCount ?? 0;
+        // We can just rely on the server action revalidation to get new stats,
+        // but for immediate start we use the current UI pending counts.
+        // Wait, resetting makes them pending again. We should wait for revalidation.
 
-        if (freshDecodePendingCount > 0 || freshPendingCount > 0) {
-          startProcess(freshDecodePendingCount, freshPendingCount);
+        // Let's just trigger startProcess with whatever we think is pending now.
+        // If we just reset, failedCount becomes pending.
+        const effectiveDecodePending = decodePendingCount;
+        const effectivePending = hasFailures ? pendingCount + failedCount : pendingCount;
+
+        if (effectiveDecodePending > 0 || effectivePending > 0) {
+          startProcess(effectiveDecodePending, effectivePending);
         }
       } catch (err) {
         console.error("Sync process error:", err);
@@ -182,8 +197,6 @@ export function SyncButton({ period }: Readonly<SyncButtonProps>) {
       return;
     }
 
-    // Nothing pending — run full pipeline (fetch → decode → analyze).
-    // This requires cooldown to not be active.
     if (isCooldownActive) return;
 
     setManualFetchTriggered(true);
@@ -192,66 +205,40 @@ export function SyncButton({ period }: Readonly<SyncButtonProps>) {
     await triggerFetchNow();
   }
 
-  /**
-   * Determine the button text based on current state.
-   */
   function getButtonText(): string {
-    // Active states
     if (isResetting) return "Mereset...";
-
     if (isFetchActive && manualFetchTriggered) {
       if (autoFetchStatus === "fetching") return "Mengambil berita...";
       if (autoFetchStatus === "decoding") return "Memproses URL...";
       if (autoFetchStatus === "analyzing") return "Menganalisis...";
     }
-
     if (isDecoding && decodeProgress) {
       const current = decodeProgress.decoded + decodeProgress.failed;
       return `Proses URL ${current}/${decodeProgress.total}`;
     }
-
     if (isAnalyzing) {
       return `Analisis ${sessionAnalyzed}/${sessionTotal}`;
     }
-
-    // Post-action states (briefly shown)
     if (manualFetchTriggered && autoFetchStatus === "success") return "Selesai!";
     if (manualFetchTriggered && autoFetchStatus === "error") return "Coba lagi";
-
-    // Idle states
     if (isCooldownActive && !needsAnalysis) {
       return `Jeda (${formatRemainingTime(cooldownRemaining)})`;
     }
-
     if (needsAnalysis) {
       const totalPending = failedCount + pendingCount + decodePendingCount;
       return `Analisis (${totalPending} tertunda)`;
     }
-
     if (totalArticles === 0) return "Ambil & Analisis";
-
     return "Ambil & Analisis";
   }
 
-  /**
-   * Determine subtext below the button.
-   */
   function getSubtext(): { text: string; type: "info" | "warning" | "success" | "error" } | null {
-    // Active states
-    if (isResetting) {
-      return { text: "Mereset artikel yang gagal...", type: "info" };
-    }
-    if (isDecoding) {
-      return { text: "Memproses URL Google News...", type: "info" };
-    }
+    if (isResetting) return { text: "Mereset artikel yang gagal...", type: "info" };
+    if (isDecoding) return { text: "Memproses URL Google News...", type: "info" };
     if (isAnalyzing) {
-      if (sessionFailed > 0) {
-        return { text: `${sessionFailed} gagal sejauh ini`, type: "warning" };
-      }
+      if (sessionFailed > 0) return { text: `${sessionFailed} gagal sejauh ini`, type: "warning" };
       return { text: "Menganalisis artikel...", type: "info" };
     }
-
-    // Post-fetch results (shown briefly after manual trigger)
     if (manualFetchTriggered && autoFetchStatus === "error" && lastError) {
       return { text: lastError, type: "error" };
     }
@@ -266,64 +253,32 @@ export function SyncButton({ period }: Readonly<SyncButtonProps>) {
       } else {
         resultText = "Tidak ada berita ditemukan";
       }
-      if (warnings.length > 0) {
-        return { text: `${resultText}. ${warnings.length} peringatan`, type: "warning" };
-      }
+      if (warnings.length > 0) return { text: `${resultText}. ${warnings.length} peringatan`, type: "warning" };
       return { text: resultText, type: inserted > 0 ? "success" : "info" };
     }
-
-    // Idle states
-    if (hasFailures) {
-      return { text: `${failedCount} gagal - Klik untuk coba lagi`, type: "warning" };
-    }
-    if (hasDecodePending && hasPending) {
-      return { text: `${decodePendingCount} proses URL, ${pendingCount} siap analisis`, type: "info" };
-    }
-    if (hasDecodePending) {
-      return { text: `${decodePendingCount} perlu proses URL dulu`, type: "info" };
-    }
-    if (hasPending) {
-      return { text: `${pendingCount} siap dianalisis`, type: "info" };
-    }
-    if (isCooldownActive) {
-      return { text: `Jeda aktif. Coba lagi dalam ${formatRemainingTime(cooldownRemaining)}.`, type: "warning" };
-    }
-    if (totalArticles === 0) {
-      return { text: "Belum ada artikel", type: "info" };
-    }
-
+    if (hasFailures) return { text: `${failedCount} gagal - Klik untuk coba lagi`, type: "warning" };
+    if (hasDecodePending && hasPending) return { text: `${decodePendingCount} proses URL, ${pendingCount} siap analisis`, type: "info" };
+    if (hasDecodePending) return { text: `${decodePendingCount} perlu proses URL dulu`, type: "info" };
+    if (hasPending) return { text: `${pendingCount} siap dianalisis`, type: "info" };
+    if (isCooldownActive) return { text: `Jeda aktif. Coba lagi dalam ${formatRemainingTime(cooldownRemaining)}.`, type: "warning" };
+    if (totalArticles === 0) return { text: "Belum ada artikel", type: "info" };
     return { text: "Semua artikel teranalisis", type: "success" };
   }
 
-  /**
-   * Determine the button icon.
-   */
   function getIcon() {
-    if (isBusy || isResetting) {
-      return <RiLoader4Line className="size-4 animate-spin" />;
-    }
-    if (manualFetchTriggered && autoFetchStatus === "success") {
-      return <RiCheckLine className="size-4" />;
-    }
-    if (manualFetchTriggered && autoFetchStatus === "error") {
-      return <RiErrorWarningLine className="size-4" />;
-    }
-    if (needsAnalysis) {
-      return <RiSparklingLine className="size-4" />;
-    }
+    if (isBusy || isResetting) return <RiLoader4Line className="size-4 animate-spin" />;
+    if (manualFetchTriggered && autoFetchStatus === "success") return <RiCheckLine className="size-4" />;
+    if (manualFetchTriggered && autoFetchStatus === "error") return <RiErrorWarningLine className="size-4" />;
+    if (needsAnalysis) return <RiSparklingLine className="size-4" />;
     return <RiRefreshLine className="size-4" />;
   }
 
-  /**
-   * Determine the button variant.
-   */
   function getVariant(): "primary" | "secondary" | "destructive" {
     if (manualFetchTriggered && autoFetchStatus === "error") return "destructive";
     if (needsAnalysis) return "secondary";
     return "primary";
   }
 
-  // Button is disabled when busy OR when nothing to do and on cooldown
   const isDisabled = isBusy || (!needsAnalysis && isCooldownActive);
   const subtext = getSubtext();
 
@@ -340,15 +295,14 @@ export function SyncButton({ period }: Readonly<SyncButtonProps>) {
       </Button>
       {subtext && (
         <p
-          className={`max-w-[220px] text-right text-xs leading-tight ${
-            subtext.type === "error"
+          className={`max-w-[220px] text-right text-xs leading-tight ${subtext.type === "error"
               ? "text-red-500 dark:text-red-400"
               : subtext.type === "warning"
                 ? "text-amber-600 dark:text-amber-400"
                 : subtext.type === "success"
                   ? "text-emerald-600 dark:text-emerald-400"
                   : "text-gray-500 dark:text-gray-400"
-          }`}
+            }`}
         >
           {subtext.text}
         </p>

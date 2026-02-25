@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SKK Migas News Monitor",
+  title: "SKK Migas Kalsul News Monitor",
   description:
     "News monitoring dashboard for SKK Migas Kalsul (Kalimantan & Sulawesi)",
 };

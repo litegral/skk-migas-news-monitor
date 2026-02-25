@@ -93,17 +93,17 @@ const MAX_ROW_HEIGHT = 250;
  */
 function estimateLineCount(text: string | null | undefined, columnWidth: number): number {
   if (!text) return 1;
-  
+
   // Count explicit newlines
   const explicitNewlines = (text.match(/\n/g) || []).length;
-  
+
   // Estimate characters per line based on column width
   const charsPerLine = Math.max(1, Math.floor(columnWidth * CHAR_WIDTH_FACTOR));
-  
+
   // Estimate wrapped lines (ignoring explicit newlines for now)
   const textWithoutNewlines = text.replace(/\n/g, " ");
   const wrappedLines = Math.ceil(textWithoutNewlines.length / charsPerLine);
-  
+
   // Total lines = max of explicit lines or wrapped lines
   return Math.max(1, wrappedLines, explicitNewlines + 1);
 }
@@ -157,7 +157,7 @@ export async function exportArticlesToExcel(
 
   // Create workbook and worksheet
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "SKK Migas News Monitor";
+  workbook.creator = "SKK Migas Kalsul News Monitor";
   workbook.created = new Date();
 
   const worksheet = workbook.addWorksheet(sheetName, {

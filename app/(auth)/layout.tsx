@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Sign in - SKK Migas News Monitor",
+  title: "Sign in - SKK Migas Kalsul News Monitor",
 };
 
 export default function AuthLayout({

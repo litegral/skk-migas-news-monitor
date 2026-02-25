@@ -6,7 +6,7 @@ import { RSSFeedManager } from "@/components/settings/RSSFeedManager";
 import { TopicManager } from "@/components/settings/TopicManager";
 
 export const metadata: Metadata = {
-  title: "Settings - SKK Migas News Monitor",
+  title: "Settings - SKK Migas Kalsul News Monitor",
 };
 
 export default async function SettingsPage() {

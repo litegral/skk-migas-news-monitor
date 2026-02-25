@@ -2,6 +2,46 @@
  * Dashboard-related types.
  */
 
+/** KPI data for the dashboard */
+export interface KPIData {
+  totalArticles: number;
+  analyzedCount: number;  // Successfully analyzed (has summary)
+  failedCount: number;    // Failed analysis (has ai_error)
+  pendingCount: number;   // Ready for analysis (url_decoded = true, ai_processed = false)
+  decodePendingCount: number; // Waiting for URL decode (url_decoded = false)
+  positivePercent: number;
+  activeSources: number;
+  lastUpdated: string | null;
+}
+
+/** Sentiment data point for charts */
+export interface SentimentDataPoint {
+  date: string;
+  Positif: number;
+  Netral: number;
+  Negatif: number;
+}
+
+/** Source data for bar list */
+export interface SourceData {
+  name: string;
+  value: number;
+}
+
+/** Category data for charts */
+export interface CategoryData {
+  category: string;
+  count: number;
+}
+
+/** Sentiment pie chart data (server-computed) */
+export interface SentimentPieData {
+  positive: number;
+  negative: number;
+  neutral: number;
+  total: number;
+}
+
 /** Period options for filtering dashboard data */
 export type DashboardPeriod = "7d" | "1m" | "3m" | "6m" | "1y" | "all";
 

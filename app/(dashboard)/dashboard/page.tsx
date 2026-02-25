@@ -1,196 +1,88 @@
 import type { Metadata } from "next";
-import { format } from "date-fns";
-
+import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
-import {
-  dashboardArticleSelect,
-  type DashboardArticleRow,
-  toDashboardArticle,
-} from "@/lib/services/dashboard";
-import type { DashboardData } from "@/app/api/dashboard/route";
+
+import type { DashboardPeriod } from "@/lib/types/dashboard";
+import { DEFAULT_PERIOD, PERIOD_OPTIONS } from "@/lib/types/dashboard";
+import { getActiveTopics, getPaginatedArticles } from "@/lib/services/dashboard";
+
 import { DashboardClient } from "@/components/dashboard/DashboardClient";
+import { DashboardWidgets } from "@/components/dashboard/ServerWidgets";
 
 export const metadata: Metadata = {
-  title: "Dashboard - SKK Migas News Monitor",
+  title: "Dashboard - SKK Migas Kalsul News Monitor",
 };
 
-export default async function DashboardPage() {
+export default async function DashboardPage(
+  props: {
+    searchParams?: Promise<{ period?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+
+  // Parse period from searchParams or default
+  let period: DashboardPeriod = DEFAULT_PERIOD;
+  if (searchParams?.period && PERIOD_OPTIONS.some(o => o.value === searchParams.period)) {
+    period = searchParams.period as DashboardPeriod;
+  }
+
+  // Fetch base layout data (topics, active flags, etc.)
+  const { topicMap, availableTopics } = await getActiveTopics();
+
+  // Fetch initial articles for the feed (page 1)
+  const { articles: initialArticles, total: totalArticles } = await getPaginatedArticles(1, 10);
+
+  // We need pendingCount for the SyncButton logic. 
+  // It's fetched lightly. We can just do a very quick count query.
   const supabase = await createClient();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims?.sub;
 
-  // Fetch all articles for the current user
-  const { data: articlesData } = await supabase
-    .from("articles")
-    .select(dashboardArticleSelect)
-    .order("published_at", { ascending: false });
+  let pendingCount = 0;
+  let failedCount = 0;
+  let decodePendingCount = 0;
 
-  // Fetch enabled topics with IDs for filtering and name resolution
-  const { data: topicsData } = await supabase
-    .from("topics")
-    .select("id, name")
-    .eq("enabled", true)
-    .order("name", { ascending: true });
+  if (userId) {
+    const [pendingRes, failedRes, decodePendingRes] = await Promise.all([
+      supabase
+        .from("articles")
+        .select("*", { count: 'exact', head: true })
+        .eq("user_id", userId)
+        .eq("ai_processed", false)
+        .eq("url_decoded", true)
+        .eq("decode_failed", false),
+      supabase
+        .from("articles")
+        .select("*", { count: 'exact', head: true })
+        .eq("user_id", userId)
+        .eq("ai_processed", true)
+        .not("ai_error", "is", null),
+      supabase
+        .from("articles")
+        .select("*", { count: 'exact', head: true })
+        .eq("user_id", userId)
+        .eq("url_decoded", false)
+    ]);
 
-  // Build topic map (id → name) and set of active topic IDs
-  const topicMap: Record<string, string> = {};
-  const activeTopicIds = new Set<string>();
-  for (const topic of topicsData ?? []) {
-    topicMap[topic.id] = topic.name;
-    activeTopicIds.add(topic.id);
+    pendingCount = pendingRes.count ?? 0;
+    failedCount = failedRes.count ?? 0;
+    decodePendingCount = decodePendingRes.count ?? 0;
   }
-  const availableTopics = Object.values(topicMap).sort();
 
-  // Convert and filter articles: only include those matching at least one active topic
-  const articleRows = (articlesData ?? []) as DashboardArticleRow[];
-  const articles = articleRows
-    .map(toDashboardArticle)
-    .filter((article) => {
-      if (!article.matchedTopicIds || article.matchedTopicIds.length === 0) return false;
-      return article.matchedTopicIds.some((id) => activeTopicIds.has(id));
-    });
+  // Pre-render the Suspense-wrapped Server Widgets
+  const widgets = DashboardWidgets({ period });
 
-  // Compute KPI data
-  const totalArticles = articles.length;
-  
-  // Successfully analyzed: ai_processed = true AND has summary (no error)
-  const successfullyAnalyzed = articles.filter(
-    (a) => a.aiProcessed && a.summary != null
+  return (
+    <DashboardClient
+      widgets={widgets}
+      period={period}
+      topicMap={topicMap}
+      availableTopics={availableTopics}
+      failedCount={failedCount}
+      pendingCount={pendingCount}
+      decodePendingCount={decodePendingCount}
+      initialArticles={initialArticles}
+      totalArticles={totalArticles}
+    />
   );
-  const analyzedCount = successfullyAnalyzed.length;
-  
-  // Failed: ai_processed = true AND has ai_error (no summary)
-  const failedCount = articles.filter(
-    (a) => a.aiProcessed && a.aiError != null
-  ).length;
-  
-  // Pending analysis: url_decoded = true AND ai_processed = false (ready for analysis)
-  const pendingCount = articles.filter(
-    (a) => !a.aiProcessed && a.urlDecoded === true
-  ).length;
-  
-  // Pending decode: url_decoded = false (waiting for URL decode before analysis)
-  const decodePendingCount = articles.filter(
-    (a) => a.urlDecoded === false
-  ).length;
-
-  const positiveCount = successfullyAnalyzed.filter(
-    (a) => a.sentiment === "positive",
-  ).length;
-  const positivePercent =
-    successfullyAnalyzed.length > 0
-      ? Math.round((positiveCount / successfullyAnalyzed.length) * 100)
-      : 0;
-
-  // Count unique sources
-  const uniqueSources = new Set(
-    articles.map((a) => a.sourceName).filter(Boolean),
-  );
-  const activeSources = uniqueSources.size;
-
-  // Last updated
-  const lastUpdated = articles.length > 0 ? articles[0].publishedAt : null;
-
-  // Compute sentiment over time data (group by day)
-  const sentimentByDay = new Map<
-    string,
-    { Positif: number; Netral: number; Negatif: number }
-  >();
-
-  for (const article of articles) {
-    if (!article.publishedAt || !article.sentiment) continue;
-
-    const day = format(new Date(article.publishedAt), "MMM d");
-    const existing = sentimentByDay.get(day) || {
-      Positif: 0,
-      Netral: 0,
-      Negatif: 0,
-    };
-
-    if (article.sentiment === "positive") existing.Positif++;
-    else if (article.sentiment === "neutral") existing.Netral++;
-    else if (article.sentiment === "negative") existing.Negatif++;
-
-    sentimentByDay.set(day, existing);
-  }
-
-  // Convert to array sorted by date (most recent last for chart)
-  const sentimentData = Array.from(sentimentByDay.entries())
-    .map(([date, counts]) => ({ date, ...counts }))
-    .reverse()
-    .slice(-14); // Last 14 days
-
-  // Compute sentiment pie data from all articles (no period filtering on server)
-  const sentimentPieData = {
-    positive: successfullyAnalyzed.filter((a) => a.sentiment === "positive").length,
-    negative: successfullyAnalyzed.filter((a) => a.sentiment === "negative").length,
-    neutral: successfullyAnalyzed.filter((a) => a.sentiment === "neutral").length,
-    total: successfullyAnalyzed.length,
-  };
-
-  // Compute sources ranking (from analyzed articles only, to match sentiment pie)
-  const sourcesCounts = new Map<string, number>();
-  for (const article of successfullyAnalyzed) {
-    if (!article.sourceName) continue;
-    sourcesCounts.set(
-      article.sourceName,
-      (sourcesCounts.get(article.sourceName) || 0) + 1,
-    );
-  }
-
-  // Get all sources sorted by count
-  const allSourcesData = Array.from(sourcesCounts.entries())
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value);
-
-  // Take top 6 and calculate "Others" count
-  const topSources = allSourcesData.slice(0, 6);
-  const topSourcesTotal = topSources.reduce((sum, s) => sum + s.value, 0);
-  const totalArticlesWithSource = allSourcesData.reduce((sum, s) => sum + s.value, 0);
-  const othersCount = totalArticlesWithSource - topSourcesTotal;
-
-  // Add "Lainnya" (Others) row if there are more sources beyond top 6
-  const sourcesData = othersCount > 0
-    ? [...topSources, { name: "Lainnya", value: othersCount }]
-    : topSources;
-
-  // Compute category distribution
-  const categoryCounts = new Map<string, number>();
-  for (const article of articles) {
-    if (!article.categories) continue;
-    for (const category of article.categories) {
-      categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
-    }
-  }
-
-  const categoryData = Array.from(categoryCounts.entries())
-    .map(([category, count]) => ({ category, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10); // Top 10
-
-  // Build initial data for SWR fallback
-  // Pass filtered articles - ArticleFeed handles pagination client-side
-  const initialData: DashboardData = {
-    articles,
-    totalArticles,
-    kpiData: {
-      totalArticles,
-      analyzedCount,
-      failedCount,
-      pendingCount,
-      decodePendingCount,
-      positivePercent,
-      activeSources,
-      lastUpdated,
-    },
-    sentimentData,
-    sentimentPieData,
-    sourcesData,
-    allSourcesData,
-    categoryData,
-    topicMap,
-    availableTopics,
-    pendingCount,
-    period: "3m", // Default period for server-side render
-  };
-
-  return <DashboardClient initialData={initialData} />;
 }

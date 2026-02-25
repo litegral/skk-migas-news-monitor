@@ -1,4 +1,4 @@
-import { RiOilLine } from "@remixicon/react";
+import Image from "next/image";
 import { Card } from "@/components/ui/Card";
 import { Divider } from "@/components/ui/Divider";
 import { LoginForm } from "@/components/auth/LoginForm";
@@ -8,14 +8,14 @@ export default function LoginPage() {
     <>
       {/* Logo / branding */}
       <div className="mb-8 flex flex-col items-center gap-2">
-        <div className="flex size-11 items-center justify-center rounded-lg bg-blue-500 text-white shadow-md">
-          <RiOilLine className="size-6" aria-hidden="true" />
+        <div className="flex items-center justify-center bg-transparent">
+          <Image src="/kalsul_logo.jpeg" alt="SKK Migas Kalsul Logo" width={140} height={140} className="object-contain" />
         </div>
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-50">
-          SKK Migas News Monitor
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-50 text-center">
+          SKK Migas Kalsul
         </h1>
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          Kalimantan &amp; Sulawesi monitoring dashboard
+          Monitoring Dashboard
         </p>
       </div>
 
