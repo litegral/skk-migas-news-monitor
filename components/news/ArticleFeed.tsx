@@ -153,26 +153,6 @@ export function ArticleFeed({
     setSelectedTopics([]);
   }
 
-  function toggleCategory(category: string) {
-    setSelectedCategories((prev) =>
-      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
-    );
-  }
-
-  function clearCategoryFilters() {
-    setSelectedCategories([]);
-  }
-
-  function toggleSource(source: string) {
-    setSelectedSources((prev) =>
-      prev.includes(source) ? prev.filter((s) => s !== source) : [...prev, source]
-    );
-  }
-
-  function clearSourceFilters() {
-    setSelectedSources([]);
-  }
-
   function goToPage(page: number) {
     if (page >= 1 && page <= totalPages) {
       setCurrentPage(page);

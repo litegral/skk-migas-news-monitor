@@ -17,6 +17,8 @@ import { createClient } from "@/lib/supabase/server";
 import { analyzeUnprocessedArticles } from "@/lib/services/news";
 import type { ApiResponse } from "@/lib/types/news";
 
+export const maxDuration = 60;
+
 interface AnalyzeResponseData {
   analyzed: number;
   failed: number;
@@ -43,8 +45,8 @@ export async function POST(
       );
     }
 
-    // Parse optional limit from body.
-    let limit = 10;
+    // Parse optional limit from body. Defaulting to 2 to minimize timeout risk.
+    let limit = 2;
     try {
       const body = await request.json();
       if (typeof body?.limit === "number" && body.limit > 0 && body.limit <= 100) {

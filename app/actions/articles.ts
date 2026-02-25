@@ -29,7 +29,7 @@ export async function getFeedArticlesAction(params: FeedQueryParams): Promise<{ 
         let filterTopicIds = activeTopicIds;
         if (params.topics && params.topics.length > 0) {
             filterTopicIds = Object.entries(topicMap)
-                .filter(([_, name]) => params.topics!.includes(name))
+                .filter((entry) => params.topics!.includes(entry[1]))
                 .map(([id]) => id);
         }
 
@@ -80,8 +80,8 @@ export async function getFeedArticlesAction(params: FeedQueryParams): Promise<{ 
         const articles = rows.map(toDashboardArticle);
 
         return { articles, total: count ?? 0 };
-    } catch (err: any) {
-        return { articles: [], total: 0, error: err.message };
+    } catch (err: unknown) {
+        return { articles: [], total: 0, error: err instanceof Error ? err.message : "Unknown error" };
     }
 }
 
@@ -127,7 +127,7 @@ export async function getArticleFilterOptionsAction(): Promise<{ categories: str
             categories: Array.from(uniqueCategories).sort(),
             sources: Array.from(uniqueSources).sort()
         };
-    } catch (err: any) {
-        return { categories: [], sources: [], error: err.message };
+    } catch (err: unknown) {
+        return { categories: [], sources: [], error: err instanceof Error ? err.message : "Unknown error" };
     }
 }

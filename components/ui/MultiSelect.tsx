@@ -54,6 +54,7 @@ export function MultiSelect({
                     type="button"
                     role="combobox"
                     aria-expanded={open}
+                    aria-controls="mselect-options"
                     className={cx(
                         "flex min-h-9 w-full items-center justify-between gap-1 rounded-md border bg-white px-3 py-1.5 text-sm shadow-sm outline-none transition-colors",
                         "border-gray-300 dark:border-gray-800 dark:bg-gray-950",
@@ -95,7 +96,7 @@ export function MultiSelect({
                     </div>
                 </button>
             </PopoverTrigger>
-            <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[220px] p-0" align="start">
+            <PopoverContent id="mselect-options" className="w-[--radix-popover-trigger-width] min-w-[220px] p-0" align="start">
                 <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2 dark:border-gray-800">
                     <RiSearchLine className="size-4 shrink-0 text-gray-400" />
                     <input
