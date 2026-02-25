@@ -46,11 +46,11 @@ export function ArticleFeed({
   const [currentPage, setCurrentPage] = React.useState(1);
 
   // Helper: get topic names for an article
-  const getTopicNames = (article: Article): string[] => {
+  const getTopicNames = React.useCallback((article: Article): string[] => {
     return article.matchedTopicIds
       ?.map((id) => topicMap[id])
       .filter((name): name is string => Boolean(name)) ?? [];
-  };
+  }, [topicMap]);
 
   // Derive unique topics from availableTopics or from articles
   const allTopics = React.useMemo(() => {
@@ -60,7 +60,7 @@ export function ArticleFeed({
       getTopicNames(article).forEach((name) => topicSet.add(name));
     });
     return Array.from(topicSet).sort();
-  }, [articles, availableTopics, topicMap]);
+  }, [articles, availableTopics, getTopicNames]);
 
   // Filter and sort articles
   const filteredArticles = React.useMemo(() => {
@@ -101,7 +101,7 @@ export function ArticleFeed({
     });
 
     return result;
-  }, [articles, search, sortBy, sentimentFilter, selectedTopics, topicMap]);
+  }, [articles, search, sortBy, sentimentFilter, selectedTopics, getTopicNames]);
 
   // Reset to page 1 when filters change
   React.useEffect(() => {

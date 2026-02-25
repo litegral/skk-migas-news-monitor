@@ -43,6 +43,8 @@ export function useDashboardData(options: UseDashboardDataOptions = {}) {
   return useSWR<DashboardData>(swrKey, fetcher, {
     fallbackData,
     revalidateOnFocus: false,
+    revalidateOnMount: false,
+    revalidateIfStale: false,
     dedupingInterval: 5000,
     // Keep previous data while revalidating
     keepPreviousData: true,

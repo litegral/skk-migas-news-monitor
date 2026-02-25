@@ -11,9 +11,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { format, eachDayOfInterval, startOfDay } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
-import type { Article } from "@/lib/types/news";
-import type { ArticleRow } from "@/lib/types/database";
-import type { ApiResponse } from "@/lib/types/news";
+import type { ApiResponse, Article } from "@/lib/types/news";
+import {
+  dashboardArticleSelect,
+  type DashboardArticleRow,
+  toDashboardArticle,
+} from "@/lib/services/dashboard";
 import {
   type DashboardPeriod,
   DEFAULT_PERIOD,
@@ -82,35 +85,6 @@ export interface DashboardData {
   period: DashboardPeriod;
 }
 
-/** Convert database row to domain Article type */
-function toArticle(row: ArticleRow): Article {
-  return {
-    id: row.id,
-    title: row.title,
-    link: row.link,
-    decodedUrl: row.decoded_url,
-    snippet: row.snippet,
-    photoUrl: row.photo_url,
-    sourceName: row.source_name,
-    sourceUrl: row.source_url,
-    publishedAt: row.published_at,
-    sourceType: row.source_type,
-    summary: row.summary,
-    sentiment: row.sentiment,
-    categories: row.categories,
-    aiProcessed: row.ai_processed,
-    aiError: row.ai_error,
-    aiProcessedAt: row.ai_processed_at,
-    fullContent: row.full_content,
-    matchedTopicIds: row.matched_topic_ids ?? [],
-    urlDecoded: row.url_decoded,
-    decodeFailed: row.decode_failed,
-    aiReason: row.ai_reason,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
 export async function GET(request: NextRequest): Promise<NextResponse<ApiResponse<DashboardData>>> {
   try {
     const supabase = await createClient();
@@ -121,9 +95,10 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
     const period: DashboardPeriod = periodParam ?? DEFAULT_PERIOD;
 
     // Authenticate the request
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const { data: claimsData, error: authError } = await supabase.auth.getClaims();
+    const userId = claimsData?.claims?.sub;
 
-    if (authError || !user) {
+    if (authError || !userId) {
       return NextResponse.json(
         { data: null, error: "Unauthorized" },
         { status: 401 },
@@ -133,7 +108,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
     // Fetch all articles for the current user (no topic filter yet - we filter after)
     const { data: articlesData } = await supabase
       .from("articles")
-      .select("*")
+      .select(dashboardArticleSelect)
       .order("published_at", { ascending: false });
 
     // Fetch enabled topics with IDs for filtering and name resolution
@@ -153,9 +128,9 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
     const availableTopics = Object.values(topicMap).sort();
 
     // Convert and filter articles: only include those matching at least one active topic
-    const articleRows = articlesData ?? [];
+    const articleRows = (articlesData ?? []) as DashboardArticleRow[];
     const allArticles = articleRows
-      .map(toArticle)
+      .map(toDashboardArticle)
       .filter((article) => {
         // Include article if any of its matchedTopicIds are in activeTopicIds
         if (!article.matchedTopicIds || article.matchedTopicIds.length === 0) return false;

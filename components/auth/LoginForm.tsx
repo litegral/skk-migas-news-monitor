@@ -16,6 +16,10 @@ export function LoginForm() {
   const [error, setError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
 
+  React.useEffect(() => {
+    router.prefetch("/dashboard");
+  }, [router]);
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
@@ -30,14 +34,13 @@ export function LoginForm() {
 
       if (authError) {
         setError(authError.message);
+        setIsLoading(false);
         return;
       }
 
-      router.push("/dashboard");
-      router.refresh();
+      router.replace("/dashboard");
     } catch {
       setError("Terjadi kesalahan yang tidak terduga. Silakan coba lagi.");
-    } finally {
       setIsLoading(false);
     }
   }
@@ -57,6 +60,7 @@ export function LoginForm() {
             placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            disabled={isLoading}
             inputClassName="pl-9"
             hasError={!!error}
           />
@@ -82,6 +86,7 @@ export function LoginForm() {
             placeholder="Masukkan kata sandi"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            disabled={isLoading}
             inputClassName="pl-9"
             hasError={!!error}
           />

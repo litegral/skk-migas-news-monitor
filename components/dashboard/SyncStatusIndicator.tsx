@@ -27,7 +27,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/Popover";
 import { Button } from "@/components/ui/Button";
-import { useAutoFetch, type AutoFetchStatus } from "@/contexts/AutoFetchContext";
+import { useAutoFetch } from "@/contexts/AutoFetchContext";
 import { useAnalysis } from "@/contexts/AnalysisContext";
 import { cx } from "@/lib/utils";
 

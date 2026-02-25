@@ -90,9 +90,8 @@ function SignOutButton() {
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
-      router.push("/login");
-      router.refresh();
-    } finally {
+      router.replace("/login");
+    } catch {
       setIsLoading(false);
     }
   }

@@ -104,7 +104,6 @@ export function SyncButton({ period }: Readonly<SyncButtonProps>) {
   const [isResetting, setIsResetting] = React.useState(false);
   const [cooldownRemaining, setCooldownRemaining] = React.useState<number>(0);
   const [manualFetchTriggered, setManualFetchTriggered] = React.useState(false);
-  const [lastAction, setLastAction] = React.useState<"fetch" | "analyze" | null>(null);
 
   // Check cooldown on mount and update every second
   React.useEffect(() => {
@@ -121,7 +120,6 @@ export function SyncButton({ period }: Readonly<SyncButtonProps>) {
     if (manualFetchTriggered && (autoFetchStatus === "success" || autoFetchStatus === "error")) {
       const timeout = setTimeout(() => {
         setManualFetchTriggered(false);
-        setLastAction(null);
       }, 4000);
       return () => clearTimeout(timeout);
     }
@@ -150,7 +148,6 @@ export function SyncButton({ period }: Readonly<SyncButtonProps>) {
     // If there are pending articles to analyze (failed, decode-pending, or analysis-pending),
     // run analyze-only (no cooldown needed).
     if (needsAnalysis) {
-      setLastAction("analyze");
       try {
         // Reset failed articles first if any
         if (hasFailures) {
@@ -189,7 +186,6 @@ export function SyncButton({ period }: Readonly<SyncButtonProps>) {
     // This requires cooldown to not be active.
     if (isCooldownActive) return;
 
-    setLastAction("fetch");
     setManualFetchTriggered(true);
     saveCooldownTimestamp();
     setCooldownRemaining(FETCH_COOLDOWN_MS);

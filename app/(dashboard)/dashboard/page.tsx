@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import { format } from "date-fns";
 
 import { createClient } from "@/lib/supabase/server";
-import type { Article } from "@/lib/types/news";
-import type { ArticleRow } from "@/lib/types/database";
+import {
+  dashboardArticleSelect,
+  type DashboardArticleRow,
+  toDashboardArticle,
+} from "@/lib/services/dashboard";
 import type { DashboardData } from "@/app/api/dashboard/route";
 import { DashboardClient } from "@/components/dashboard/DashboardClient";
 
@@ -11,42 +14,13 @@ export const metadata: Metadata = {
   title: "Dashboard - SKK Migas News Monitor",
 };
 
-/** Convert database row to domain Article type */
-function toArticle(row: ArticleRow): Article {
-  return {
-    id: row.id,
-    title: row.title,
-    link: row.link,
-    decodedUrl: row.decoded_url,
-    snippet: row.snippet,
-    photoUrl: row.photo_url,
-    sourceName: row.source_name,
-    sourceUrl: row.source_url,
-    publishedAt: row.published_at,
-    sourceType: row.source_type,
-    summary: row.summary,
-    sentiment: row.sentiment,
-    categories: row.categories,
-    aiProcessed: row.ai_processed,
-    aiError: row.ai_error,
-    aiProcessedAt: row.ai_processed_at,
-    fullContent: row.full_content,
-    matchedTopicIds: row.matched_topic_ids ?? [],
-    urlDecoded: row.url_decoded,
-    decodeFailed: row.decode_failed,
-    aiReason: row.ai_reason,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
 export default async function DashboardPage() {
   const supabase = await createClient();
 
   // Fetch all articles for the current user
   const { data: articlesData } = await supabase
     .from("articles")
-    .select("*")
+    .select(dashboardArticleSelect)
     .order("published_at", { ascending: false });
 
   // Fetch enabled topics with IDs for filtering and name resolution
@@ -66,9 +40,9 @@ export default async function DashboardPage() {
   const availableTopics = Object.values(topicMap).sort();
 
   // Convert and filter articles: only include those matching at least one active topic
-  const articleRows = articlesData ?? [];
+  const articleRows = (articlesData ?? []) as DashboardArticleRow[];
   const articles = articleRows
-    .map(toArticle)
+    .map(toDashboardArticle)
     .filter((article) => {
       if (!article.matchedTopicIds || article.matchedTopicIds.length === 0) return false;
       return article.matchedTopicIds.some((id) => activeTopicIds.has(id));
