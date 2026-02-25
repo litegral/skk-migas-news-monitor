@@ -12,10 +12,11 @@ import {
 import type { Article, Sentiment } from "@/lib/types/news";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { MultiSelect } from "@/components/ui/MultiSelect";
 import { ArticleCard } from "./ArticleCard";
 import { ExportButton } from "@/components/dashboard/ExportButton";
 import { cx } from "@/lib/utils";
-import { getFeedArticlesAction, type FeedQueryParams } from "@/app/actions/articles";
+import { getFeedArticlesAction, getArticleFilterOptionsAction, type FeedQueryParams } from "@/app/actions/articles";
 
 interface ArticleFeedProps {
   initialArticles: Article[];
@@ -45,12 +46,16 @@ export function ArticleFeed({
   const [sortBy, setSortBy] = useState<SortOption>("newest");
   const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>("all");
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
   const [articles, setArticles] = useState<Article[]>(initialArticles);
   const [total, setTotal] = useState(initialTotal);
   const [isLoading, setIsLoading] = useState(false);
+  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+  const [availableSources, setAvailableSources] = useState<string[]>([]);
 
   // Derive unique topics from availableTopics
   const allTopics = useMemo(() => {
@@ -69,7 +74,21 @@ export function ArticleFeed({
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, sortBy, sentimentFilter, selectedTopics]);
+  }, [debouncedSearch, sortBy, sentimentFilter, selectedTopics, selectedCategories, selectedSources]);
+
+  // Fetch filter options on mount
+  useEffect(() => {
+    let mounted = true;
+    async function loadOptions() {
+      const res = await getArticleFilterOptionsAction();
+      if (mounted && !res.error) {
+        setAvailableCategories(res.categories);
+        setAvailableSources(res.sources);
+      }
+    }
+    loadOptions();
+    return () => { mounted = false; };
+  }, []);
 
   // Fetch data
   const loadData = useCallback(async () => {
@@ -80,6 +99,8 @@ export function ArticleFeed({
       sortBy === "newest" &&
       sentimentFilter === "all" &&
       selectedTopics.length === 0 &&
+      selectedCategories.length === 0 &&
+      selectedSources.length === 0 &&
       !isLoading // Don't skip if manual refresh needed
     ) {
       if (articles !== initialArticles) {
@@ -97,6 +118,8 @@ export function ArticleFeed({
         search: debouncedSearch,
         sentiment: sentimentFilter,
         topics: selectedTopics,
+        categories: selectedCategories,
+        sources: selectedSources,
         sortBy
       };
       const res = await getFeedArticlesAction(params);
@@ -109,7 +132,7 @@ export function ArticleFeed({
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, debouncedSearch, sortBy, sentimentFilter, selectedTopics, pageSize, initialArticles, initialTotal]);
+  }, [currentPage, debouncedSearch, sortBy, sentimentFilter, selectedTopics, selectedCategories, selectedSources, pageSize, initialArticles, initialTotal]);
 
   useEffect(() => {
     loadData();
@@ -128,6 +151,26 @@ export function ArticleFeed({
 
   function clearTopicFilters() {
     setSelectedTopics([]);
+  }
+
+  function toggleCategory(category: string) {
+    setSelectedCategories((prev) =>
+      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
+    );
+  }
+
+  function clearCategoryFilters() {
+    setSelectedCategories([]);
+  }
+
+  function toggleSource(source: string) {
+    setSelectedSources((prev) =>
+      prev.includes(source) ? prev.filter((s) => s !== source) : [...prev, source]
+    );
+  }
+
+  function clearSourceFilters() {
+    setSelectedSources([]);
   }
 
   function goToPage(page: number) {
@@ -158,7 +201,7 @@ export function ArticleFeed({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {/* Search and filter bar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
@@ -170,7 +213,7 @@ export function ArticleFeed({
             className="w-full"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
           <Button
             variant="secondary"
             onClick={() => setShowFilters(!showFilters)}
@@ -178,9 +221,9 @@ export function ArticleFeed({
           >
             <RiFilterLine className="size-4" />
             Filters
-            {(sentimentFilter !== "all" || selectedTopics.length > 0) && (
+            {(sentimentFilter !== "all" || selectedTopics.length > 0 || selectedCategories.length > 0 || selectedSources.length > 0) && (
               <span className="ml-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-                {(sentimentFilter !== "all" ? 1 : 0) + selectedTopics.length}
+                {(sentimentFilter !== "all" ? 1 : 0) + selectedTopics.length + selectedCategories.length + selectedSources.length}
               </span>
             )}
           </Button>
@@ -188,7 +231,7 @@ export function ArticleFeed({
         </div>
       </div>
 
-      {/* Filter options */}
+      {/* Filter options panel */}
       {showFilters && (
         <div className="flex flex-col gap-4 rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex flex-wrap items-center gap-4">
@@ -199,7 +242,7 @@ export function ArticleFeed({
                 id="sort"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as SortOption)}
-                className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+                className="rounded-md border border-gray-300 bg-white py-1 pl-2 pr-8 text-sm dark:border-gray-700 dark:bg-gray-800"
               >
                 <option value="newest">Terbaru dahulu</option>
                 <option value="oldest">Terlama dahulu</option>
@@ -213,7 +256,7 @@ export function ArticleFeed({
                 id="sentiment"
                 value={sentimentFilter}
                 onChange={(e) => setSentimentFilter(e.target.value as SentimentFilter)}
-                className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+                className="rounded-md border border-gray-300 bg-white py-1 pl-2 pr-8 text-sm dark:border-gray-700 dark:bg-gray-800"
               >
                 <option value="all">Semua</option>
                 <option value="positive">Positif</option>
@@ -221,6 +264,38 @@ export function ArticleFeed({
                 <option value="negative">Negatif</option>
               </select>
             </div>
+
+            {/* Category filter */}
+            {availableCategories.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">Kategori:</label>
+                <div className="w-48">
+                  <MultiSelect
+                    options={availableCategories}
+                    selected={selectedCategories}
+                    onChange={setSelectedCategories}
+                    placeholder="Semua Kategori"
+                    searchPlaceholder="Cari Kategori..."
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Source filter */}
+            {availableSources.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">Sumber:</label>
+                <div className="w-48">
+                  <MultiSelect
+                    options={availableSources}
+                    selected={selectedSources}
+                    onChange={setSelectedSources}
+                    placeholder="Semua Sumber"
+                    searchPlaceholder="Cari Sumber..."
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Topic filter */}
@@ -261,6 +336,7 @@ export function ArticleFeed({
               </div>
             </div>
           )}
+
         </div>
       )}
 
