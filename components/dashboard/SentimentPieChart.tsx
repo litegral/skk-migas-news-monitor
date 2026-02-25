@@ -2,8 +2,7 @@
 
 import { Card } from "@/components/ui/Card";
 import { DonutChart } from "@/components/ui/DonutChart";
-import type { SentimentPieData } from "@/app/api/dashboard/route";
-import type { DashboardPeriod } from "@/lib/types/dashboard";
+import type { DashboardPeriod, SentimentPieData } from "@/lib/types/dashboard";
 import { getPeriodLabel } from "@/lib/types/dashboard";
 
 interface SentimentPieChartProps {

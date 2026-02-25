@@ -54,7 +54,9 @@ interface DashboardClientProps {
   period: DashboardPeriod;
   topicMap: Record<string, string>;
   availableTopics: string[];
+  failedCount: number;
   pendingCount: number;
+  decodePendingCount: number;
   initialArticles: Article[];
   totalArticles: number;
 }
@@ -64,7 +66,9 @@ export function DashboardClient({
   period,
   topicMap,
   availableTopics,
+  failedCount,
   pendingCount,
+  decodePendingCount,
   initialArticles,
   totalArticles
 }: Readonly<DashboardClientProps>) {
@@ -141,7 +145,12 @@ export function DashboardClient({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <SyncButton period={period} />
+          <SyncButton
+            failedCount={failedCount}
+            pendingCount={pendingCount}
+            decodePendingCount={decodePendingCount}
+            totalArticles={totalArticles}
+          />
           <SyncStatusIndicator />
         </div>
       </div>

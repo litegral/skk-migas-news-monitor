@@ -11,8 +11,7 @@
  */
 
 import React from "react";
-import { useSWRConfig } from "swr";
-import { DASHBOARD_API_BASE } from "@/lib/hooks/useDashboardData";
+import { revalidateDashboardAction, getPendingCountsAction } from "@/app/actions/dashboard";
 
 /** SSE event data types for analysis */
 interface SSEProgressEvent {
@@ -80,8 +79,6 @@ interface AnalysisProviderProps {
 }
 
 export function AnalysisProvider({ children }: Readonly<AnalysisProviderProps>) {
-  const { mutate } = useSWRConfig();
-
   const [phase, setPhase] = React.useState<ProcessPhase>("idle");
   const [decodeProgress, setDecodeProgress] = React.useState<DecodeProgress | null>(null);
   const [analyzedCount, setAnalyzedCount] = React.useState(0);
@@ -161,7 +158,7 @@ export function AnalysisProvider({ children }: Readonly<AnalysisProviderProps>) 
   const runAnalyzeStream = React.useCallback((pendingCount: number): Promise<void> => {
     return new Promise((resolve) => {
       console.log(`[AnalysisContext] Starting analysis stream for ${pendingCount} articles...`);
-      
+
       // Reset analysis state
       setAnalyzedCount(0);
       setFailedCount(0);
@@ -215,13 +212,9 @@ export function AnalysisProvider({ children }: Readonly<AnalysisProviderProps>) 
   /**
    * Revalidate dashboard data
    */
-  const revalidateDashboard = React.useCallback(() => {
-    mutate(
-      (key: string) => typeof key === "string" && key.startsWith(DASHBOARD_API_BASE),
-      undefined,
-      { revalidate: true }
-    );
-  }, [mutate]);
+  const revalidateDashboard = React.useCallback(async () => {
+    await revalidateDashboardAction();
+  }, []);
 
   /**
    * Start the full process: decode (if needed) → analyze
@@ -256,9 +249,8 @@ export function AnalysisProvider({ children }: Readonly<AnalysisProviderProps>) 
         }
 
         // Get fresh pending count for analysis
-        const freshRes = await fetch(`${DASHBOARD_API_BASE}?period=1m`);
-        const freshJson = await freshRes.json();
-        const freshPendingCount = freshJson.data?.kpiData?.pendingCount ?? 0;
+        const counts = await getPendingCountsAction();
+        const freshPendingCount = counts.pendingCount;
 
         // Phase 2: Analyze (if there are pending articles)
         if (freshPendingCount > 0) {

@@ -26,9 +26,8 @@
  */
 
 import React from "react";
-import { useSWRConfig } from "swr";
 import { useAnalysis } from "@/contexts/AnalysisContext";
-import { DASHBOARD_API_BASE } from "@/lib/hooks/useDashboardData";
+import { revalidateDashboardAction, getPendingCountsAction } from "@/app/actions/dashboard";
 
 /** Auto-fetch interval: 1 hour */
 const FETCH_INTERVAL_MS = 60 * 60 * 1000;
@@ -84,7 +83,6 @@ interface AutoFetchProviderProps {
 }
 
 export function AutoFetchProvider({ children }: Readonly<AutoFetchProviderProps>) {
-  const { mutate } = useSWRConfig();
   const { startAnalysis, isAnalyzing } = useAnalysis();
 
   const [status, setStatus] = React.useState<AutoFetchStatus>("idle");
@@ -308,11 +306,7 @@ export function AutoFetchProvider({ children }: Readonly<AutoFetchProviderProps>
       console.log(`[AutoFetch] Phase 1 complete: ${totalInserted} inserted, ${totalSkipped} skipped, ${warnings.length} warnings`);
 
       // Refresh dashboard data
-      await mutate(
-        (key: string) => typeof key === "string" && key.startsWith(DASHBOARD_API_BASE),
-        undefined,
-        { revalidate: true }
-      );
+      await revalidateDashboardAction();
 
       // ========== PHASE 2: DECODE (background, 3s delays) ==========
       console.log("[AutoFetch] Phase 2: Decoding URLs...");
@@ -324,20 +318,15 @@ export function AutoFetchProvider({ children }: Readonly<AutoFetchProviderProps>
       );
 
       // Refresh dashboard data after decode
-      await mutate(
-        (key: string) => typeof key === "string" && key.startsWith(DASHBOARD_API_BASE),
-        undefined,
-        { revalidate: true }
-      );
+      await revalidateDashboardAction();
 
       // ========== PHASE 3: ANALYZE (background) ==========
       if (!isAnalyzing) {
         setStatus("analyzing");
 
         // Fetch fresh dashboard data to get pending count
-        const freshRes = await fetch(DASHBOARD_API_BASE);
-        const freshJson = await freshRes.json();
-        const pendingCount = freshJson.data?.pendingCount ?? 0;
+        const counts = await getPendingCountsAction();
+        const pendingCount = counts.pendingCount;
 
         if (pendingCount > 0) {
           console.log(`[AutoFetch] Phase 3: Starting analysis for ${pendingCount} pending articles`);
@@ -362,7 +351,7 @@ export function AutoFetchProvider({ children }: Readonly<AutoFetchProviderProps>
     } finally {
       isFetchingRef.current = false;
     }
-  }, [lastFetchAt, mutate, isAnalyzing, startAnalysis, saveLastFetchTime, runDecodeStream]);
+  }, [lastFetchAt, isAnalyzing, startAnalysis, saveLastFetchTime, runDecodeStream]);
 
   /**
    * Check if we should fetch (on mount or visibility change)
