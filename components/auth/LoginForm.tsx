@@ -38,6 +38,7 @@ export function LoginForm() {
         return;
       }
 
+      router.refresh();
       router.replace("/dashboard");
     } catch {
       setError("Terjadi kesalahan yang tidak terduga. Silakan coba lagi.");
