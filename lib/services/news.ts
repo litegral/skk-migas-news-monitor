@@ -38,8 +38,6 @@ const LLM_DELAY_MS = 500;
 /** Maximum keywords to fetch per topic (to limit API calls) */
 const MAX_KEYWORDS_PER_TOPIC = 5;
 
-/** Default lookback period for first fetch (days) */
-const DEFAULT_LOOKBACK_DAYS = 7;
 
 /** Topic data for fetching (includes last_fetched_at for smart cutoff) */
 interface TopicForFetch {
@@ -59,38 +57,7 @@ export interface FetchResult {
   errors: string[];
 }
 
-/**
- * Get the cutoff date for a specific topic based on its last_fetched_at.
- *
- * - If last_fetched_at is NULL: use DEFAULT_LOOKBACK_DAYS ago (new topic)
- * - If last_fetched_at exists: use that timestamp
- *
- * @returns Cutoff date - only fetch articles published after this date
- */
-function getTopicCutoffDate(topic: TopicForFetch): Date {
-  if (!topic.lastFetchedAt) {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - DEFAULT_LOOKBACK_DAYS);
-    console.log(`[news] Topic "${topic.name}" never fetched, using ${DEFAULT_LOOKBACK_DAYS}-day lookback (since ${cutoff.toISOString()})`);
-    return cutoff;
-  }
 
-  const cutoff = new Date(topic.lastFetchedAt);
-  console.log(`[news] Topic "${topic.name}" last fetched at ${cutoff.toISOString()}`);
-  return cutoff;
-}
-
-/**
- * Filter articles to only include those published after the cutoff date.
- * Articles without a publishedAt date are excluded.
- */
-function filterArticlesByDate(articles: Article[], cutoffDate: Date): Article[] {
-  return articles.filter((article) => {
-    if (!article.publishedAt) return false;
-    const publishedAt = new Date(article.publishedAt);
-    return publishedAt > cutoffDate;
-  });
-}
 
 /**
  * Fetch articles from Google News RSS for all enabled topics using their keywords.
@@ -126,9 +93,8 @@ export async function fetchAndStoreGoogleNews(
     return { inserted: 0, skipped: 0, errors: ["No enabled topics found"] };
   }
 
-  // 2. Build list of keywords to fetch, with per-topic cutoff dates
-  const keywordQueue: { keyword: string; topicId: string; topicName: string; cutoffDate: Date }[] = [];
-  const topicCutoffs = new Map<string, Date>();
+  // 2. Build list of keywords to fetch
+  const keywordQueue: { keyword: string; topicId: string; topicName: string; }[] = [];
 
   for (const row of topics ?? []) {
     // Skip topics without keywords
@@ -144,15 +110,11 @@ export async function fetchAndStoreGoogleNews(
       lastFetchedAt: row.last_fetched_at,
     };
 
-    // Get per-topic cutoff
-    const cutoffDate = getTopicCutoffDate(topic);
-    topicCutoffs.set(topic.id, cutoffDate);
-
     // Limit to first N keywords per topic
     const keywordsToFetch = topic.keywords.slice(0, MAX_KEYWORDS_PER_TOPIC);
 
     for (const keyword of keywordsToFetch) {
-      keywordQueue.push({ keyword, topicId: topic.id, topicName: topic.name, cutoffDate });
+      keywordQueue.push({ keyword, topicId: topic.id, topicName: topic.name });
     }
   }
 
@@ -165,7 +127,7 @@ export async function fetchAndStoreGoogleNews(
   const fetchedTopicIds = new Set<string>();
 
   for (let i = 0; i < keywordQueue.length; i++) {
-    const { keyword, topicId, topicName, cutoffDate } = keywordQueue[i];
+    const { keyword, topicId, topicName } = keywordQueue[i];
 
     console.log(`[news] Fetching keyword ${i + 1}/${keywordQueue.length}: "${keyword}" (topic: ${topicName})`);
 
@@ -175,14 +137,9 @@ export async function fetchAndStoreGoogleNews(
       errors.push(`Keyword "${keyword}": ${result.error}`);
     }
 
-    if (result.data && result.data.length > 0) {
-      // Filter by this topic's cutoff date
-      const filteredArticles = filterArticlesByDate(result.data, cutoffDate);
-      
-      if (filteredArticles.length > 0) {
-        allArticles.push(...filteredArticles);
-        fetchedTopicIds.add(topicId);
-      }
+    if (result.data.length > 0) {
+      allArticles.push(...result.data);
+      fetchedTopicIds.add(topicId);
     }
 
     // Add delay before next request (skip for last keyword)
@@ -254,23 +211,14 @@ export async function fetchAndStoreRSS(
     return { inserted: 0, skipped: 0, errors: ["No enabled topics found for filtering RSS articles"] };
   }
 
-  // 3. Compute the earliest cutoff date across all topics
-  // (RSS feeds return all articles; we filter by the most permissive cutoff)
+  // Removed earliestCutoff logic since we want all matching articles (especially for new keywords)
+  // Deduplication is handled efficiently by upsertArticles.
   const topicData: TopicForFetch[] = (topics ?? []).map((row) => ({
     id: row.id,
     name: row.name,
     keywords: row.keywords,
     lastFetchedAt: row.last_fetched_at,
   }));
-  let earliestCutoff = new Date();
-  earliestCutoff.setDate(earliestCutoff.getDate() - DEFAULT_LOOKBACK_DAYS);
-
-  for (const topic of topicData) {
-    const topicCutoff = getTopicCutoffDate(topic);
-    if (topicCutoff < earliestCutoff) {
-      earliestCutoff = topicCutoff;
-    }
-  }
 
   // 4. Fetch articles from each feed with concurrency control.
   const limit = pLimit(RSS_CONCURRENCY);
@@ -301,14 +249,9 @@ export async function fetchAndStoreRSS(
     return { inserted: 0, skipped: 0, errors };
   }
 
-  // 6. Filter to only include articles published after earliest cutoff
-  const newArticles = filterArticlesByDate(topicFilteredArticles, earliestCutoff);
-  const skipped = topicFilteredArticles.length - newArticles.length;
-
-  if (newArticles.length === 0) {
-    console.log(`[news] RSS: No new articles found (${skipped} skipped as already fetched)`);
-    return { inserted: 0, skipped, errors };
-  }
+  // We no longer filter by date to ensure historical articles for new keywords are inserted.
+  // We rely fully on upsertArticles to prevent duplicates.
+  const newArticles = topicFilteredArticles;
 
   // 7. Upsert into the articles table.
   const count = await upsertArticles(supabase, userId, newArticles);
@@ -322,8 +265,8 @@ export async function fetchAndStoreRSS(
     await updateTopicsLastFetched(supabase, userId, Array.from(matchedTopicIds));
   }
 
-  console.log(`[news] RSS: Inserted ${count} articles, skipped ${skipped} (already fetched)`);
-  return { inserted: count, skipped, errors };
+  console.log(`[news] RSS: Inserted ${count} articles`);
+  return { inserted: count, skipped: 0, errors };
 }
 
 /**
