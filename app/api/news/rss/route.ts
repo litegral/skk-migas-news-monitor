@@ -8,6 +8,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAndStoreRSS } from "@/lib/services/news";
 import type { ApiResponse } from "@/lib/types/news";
@@ -35,12 +36,14 @@ export async function POST(): Promise<NextResponse<ApiResponse<RSSResponseData>>
       );
     }
 
-    const result = await fetchAndStoreRSS(supabase, user.id);
+    const sharedId = getSharedUserId();
+    const result = await fetchAndStoreRSS(supabase, sharedId);
 
     // Log the request
     console.log(JSON.stringify({
       route: "/api/news/rss",
       userId: user.id,
+      sharedDataUserId: sharedId,
       inserted: result.inserted,
       skipped: result.skipped,
       errorCount: result.errors.length,

@@ -7,6 +7,7 @@
  */
 
 import { revalidatePath } from "next/cache";
+import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import { validateString, validateUuid } from "@/lib/utils/validateInput";
 import { validateUrl } from "@/lib/utils/validateUrl";
@@ -130,7 +131,7 @@ export async function updateRSSFeed(
       .from("rss_feeds")
       .update(updateData)
       .eq("id", idValidation.value!)
-      .eq("user_id", user.id);
+      .eq("user_id", getSharedUserId());
 
     if (error) {
       if (error.code === "23505") {
@@ -231,7 +232,7 @@ export async function addTopic(
     }
 
     const { error } = await supabase.from("topics").insert({
-      user_id: user.id,
+      user_id: getSharedUserId(),
       name: nameValidation.value!,
       keywords: validatedKeywords,
       enabled: true,
@@ -326,7 +327,7 @@ export async function updateTopic(
       .from("topics")
       .update(updateData)
       .eq("id", idValidation.value!)
-      .eq("user_id", user.id);
+      .eq("user_id", getSharedUserId());
 
     if (error) {
       if (error.code === "23505") {
@@ -362,11 +363,8 @@ export async function deleteTopic(id: string): Promise<ActionResult> {
     }
 
     // 1. Remove this topic ID from all articles' matched_topic_ids arrays
-    // Use PostgreSQL array_remove function via RPC (created in migration 007)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: cleanupError } = await (supabase as any).rpc("remove_topic_from_articles", {
+    const { error: cleanupError } = await supabase.rpc("remove_topic_from_articles", {
       p_topic_id: idValidation.value!,
-      p_user_id: user.id,
     });
 
     if (cleanupError) {
@@ -378,7 +376,7 @@ export async function deleteTopic(id: string): Promise<ActionResult> {
       .from("topics")
       .delete()
       .eq("id", idValidation.value!)
-      .eq("user_id", user.id);
+      .eq("user_id", getSharedUserId());
 
     if (error) {
       console.error("[settings] deleteTopic error:", error.message);

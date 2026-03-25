@@ -77,6 +77,8 @@ components/
   settings/                  # RSSFeedManager, SearchQueryManager
   auth/                      # LoginForm, RegisterForm
 lib/
+  config/
+    sharedData.ts            # SHARED_DATA_USER_ID — canonical owner for shared rss/topics/articles
   supabase/
     client.ts                # Browser Supabase client (createBrowserClient)
     server.ts                # Server Supabase client (createServerClient)
@@ -96,13 +98,15 @@ proxy.ts                     # Next.js 16 auth proxy (session refresh)
 
 ## Architecture & Data Flow
 
-1. User visits dashboard -- fetch enabled search queries + RSS feeds from Supabase.
-2. In parallel: call RapidAPI for each query + parse each RSS feed URL.
+1. User visits dashboard -- fetch enabled topics + RSS feeds from Supabase (shared pool).
+2. In parallel: Google News RSS per topic keywords + parse each RSS feed URL.
 3. Normalize all results into a common `Article` shape.
-4. Upsert into `articles` table (deduplicated by `UNIQUE(user_id, link)`).
+4. Upsert into `articles` table (deduplicated by `UNIQUE(user_id, link)` where `user_id` is `SHARED_DATA_USER_ID`).
 5. For articles where `ai_processed = false`, call Groq.
 6. LLM returns: summary, sentiment (positive/negative/neutral), categories.
 7. Update articles with AI results. Display in dashboard with charts + feed.
+
+**Shared data:** All authenticated users read and write the same `rss_feeds`, `topics`, and `articles` rows. The canonical `user_id` on those rows is `SHARED_DATA_USER_ID` (a dedicated Auth user). New signups do not get a private dataset.
 
 **No ORM.** Use `@supabase/supabase-js` directly. Generate types with
 `supabase gen types typescript`. The Supabase client passes the user's JWT
@@ -110,16 +114,16 @@ automatically, so RLS policies are enforced transparently.
 
 ## Database (Supabase PostgreSQL)
 
-Three tables, all with Row-Level Security (users access only their own rows):
+Core tables use Row-Level Security: any **authenticated** user may `SELECT`/`INSERT`/`UPDATE`/`DELETE` on `rss_feeds`, `topics`, and `articles` (shared workspace). Rows are owned by the Auth user id in `SHARED_DATA_USER_ID`.
 
 | Table | Purpose |
 |-------|---------|
-| `rss_feeds` | User's custom RSS feed sources (name, url, enabled) |
-| `search_queries` | User's custom RapidAPI search queries (query, enabled) |
+| `rss_feeds` | Shared RSS feed sources (name, url, enabled) |
+| `topics` | Shared topics with keywords for Google News fetch |
 | `articles` | Cached news articles with AI analysis fields |
 
 The `articles` table includes: `title`, `link`, `snippet`, `photo_url`,
-`source_name`, `source_url`, `published_at`, `source_type` (rapidapi/rss),
+`source_name`, `source_url`, `published_at`, `source_type` (googlenews/rss),
 `summary`, `sentiment`, `categories` (text[]), `ai_processed` (boolean).
 
 Schema is managed via Supabase SQL editor. Types generated into
@@ -206,7 +210,7 @@ No Prettier configured. Follow these conventions:
 
 - Route handlers in `app/api/` return `NextResponse.json()`.
 - Consistent response shape: `{ data: T | null, error: string | null }`.
-- Server-only keys (`RAPIDAPI_KEY`, `GROQ_API_KEY`) -- no `NEXT_PUBLIC_` prefix.
+- Server-only keys (`RAPIDAPI_KEY`, `GROQ_API_KEY`, `SHARED_DATA_USER_ID`) -- no `NEXT_PUBLIC_` prefix.
 - Groq uses OpenAI-compatible chat completions format.
 - RSS parsing via `rss-parser` library (handles RSS 2.0, Atom, etc.).
 
@@ -218,6 +222,7 @@ All secrets in `.env.local` (gitignored). Document in `.env.example`.
 |----------|-------|---------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Client + Server | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client + Server | Supabase publishable/anon key |
+| `SHARED_DATA_USER_ID` | Server only | Auth user UUID that owns all shared rss/topics/articles rows (same UUID as in migration 010) |
 | `RAPIDAPI_KEY` | Server only | RapidAPI Real-Time News Data key |
 | `GROQ_API_KEY` | Server only | Groq API key |
 | `GROQ_API_BASE` | Server only | Optional override (default `https://api.groq.com/openai/v1`) |

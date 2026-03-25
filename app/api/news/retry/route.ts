@@ -8,6 +8,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import type { ApiResponse } from "@/lib/types/news";
 
@@ -38,7 +39,7 @@ export async function POST(): Promise<NextResponse<ApiResponse<RetryResponse>>> 
         ai_error: null,
         ai_processed_at: null,
       })
-      .eq("user_id", user.id)
+      .eq("user_id", getSharedUserId())
       .eq("ai_processed", true)
       .not("ai_error", "is", null)
       .select("id");

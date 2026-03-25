@@ -13,6 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import { analyzeUnprocessedArticles } from "@/lib/services/news";
 import type { ApiResponse } from "@/lib/types/news";
@@ -56,14 +57,14 @@ export async function POST(
       // No body or invalid JSON — use default limit.
     }
 
-    const result = await analyzeUnprocessedArticles(supabase, user.id, limit);
+    const result = await analyzeUnprocessedArticles(supabase, getSharedUserId(), limit);
 
     // Get remaining unprocessed count for background loop
     // Only count articles that are actually eligible for analysis
     const { count: remaining } = await supabase
       .from("articles")
       .select("*", { count: "exact", head: true })
-      .eq("user_id", user.id)
+      .eq("user_id", getSharedUserId())
       .eq("ai_processed", false)
       .eq("url_decoded", true)
       .eq("decode_failed", false);

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -25,16 +26,17 @@ export async function getPendingCountsAction() {
         return { decodePendingCount: 0, pendingCount: 0 };
     }
 
+    const sharedId = getSharedUserId();
     const [decodePendingRes, pendingRes] = await Promise.all([
         supabase
             .from("articles")
             .select("*", { count: 'exact', head: true })
-            .eq("user_id", userId)
+            .eq("user_id", sharedId)
             .eq("url_decoded", false),
         supabase
             .from("articles")
             .select("*", { count: 'exact', head: true })
-            .eq("user_id", userId)
+            .eq("user_id", sharedId)
             .eq("ai_processed", false)
             .eq("url_decoded", true)
             .eq("decode_failed", false)

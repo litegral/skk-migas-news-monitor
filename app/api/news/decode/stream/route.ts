@@ -14,6 +14,7 @@
  */
 
 import { NextRequest } from "next/server";
+import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import {
   getArticlesToDecode,
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
 
     // Get all articles needing URL decode
-    const articles = await getArticlesToDecode(supabase, user.id);
+    const articles = await getArticlesToDecode(supabase, getSharedUserId());
     const total = articles.length;
 
     // If no articles to process, return immediate complete

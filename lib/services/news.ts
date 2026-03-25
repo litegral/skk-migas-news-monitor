@@ -512,7 +512,7 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Upsert an array of normalised articles into the `articles` table.
- * Deduplicates by the `UNIQUE(user_id, link)` constraint.
+ * Deduplicates by the `UNIQUE(user_id, link)` constraint (shared owner via SHARED_DATA_USER_ID).
  * 
  * Key behaviors:
  * - For NEW articles: Insert with ai_processed = false

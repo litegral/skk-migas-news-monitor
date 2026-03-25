@@ -178,7 +178,10 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      remove_topic_from_articles: {
+        Args: { p_topic_id: string };
+        Returns: undefined;
+      };
     };
     Enums: {
       [_ in never]: never;

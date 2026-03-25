@@ -8,6 +8,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAndStoreGoogleNews } from "@/lib/services/news";
 import type { ApiResponse } from "@/lib/types/news";
@@ -35,12 +36,14 @@ export async function POST(): Promise<NextResponse<ApiResponse<GoogleNewsRespons
       );
     }
 
-    const result = await fetchAndStoreGoogleNews(supabase, user.id);
+    const sharedId = getSharedUserId();
+    const result = await fetchAndStoreGoogleNews(supabase, sharedId);
 
     // Log the request
     console.log(JSON.stringify({
       route: "/api/news/googlenews",
       userId: user.id,
+      sharedDataUserId: sharedId,
       inserted: result.inserted,
       skipped: result.skipped,
       errorCount: result.errors.length,

@@ -1,5 +1,6 @@
 "use server";
 
+import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTopics, dashboardArticleSelect, DashboardArticleRow, toDashboardArticle } from "@/lib/services/dashboard";
 import type { Article, Sentiment } from "@/lib/types/news";
@@ -101,7 +102,7 @@ export async function getArticleFilterOptionsAction(): Promise<{ categories: str
         const { data, error } = await supabase
             .from("articles")
             .select("categories, source_name")
-            .eq("user_id", userId)
+            .eq("user_id", getSharedUserId())
             .eq("ai_processed", true);
 
         if (error) {

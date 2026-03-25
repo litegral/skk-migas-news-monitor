@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
+import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 
 import type { DashboardPeriod } from "@/lib/types/dashboard";
@@ -43,24 +43,25 @@ export default async function DashboardPage(
   let decodePendingCount = 0;
 
   if (userId) {
+    const sharedId = getSharedUserId();
     const [pendingRes, failedRes, decodePendingRes] = await Promise.all([
       supabase
         .from("articles")
         .select("*", { count: 'exact', head: true })
-        .eq("user_id", userId)
+        .eq("user_id", sharedId)
         .eq("ai_processed", false)
         .eq("url_decoded", true)
         .eq("decode_failed", false),
       supabase
         .from("articles")
         .select("*", { count: 'exact', head: true })
-        .eq("user_id", userId)
+        .eq("user_id", sharedId)
         .eq("ai_processed", true)
         .not("ai_error", "is", null),
       supabase
         .from("articles")
         .select("*", { count: 'exact', head: true })
-        .eq("user_id", userId)
+        .eq("user_id", sharedId)
         .eq("url_decoded", false)
     ]);
 

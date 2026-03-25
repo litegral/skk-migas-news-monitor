@@ -13,6 +13,7 @@
  */
 
 import { NextRequest } from "next/server";
+import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import { crawlArticleContent } from "@/lib/services/crawler";
 import { analyzeArticle } from "@/lib/services/llm";
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const { data: articles, error: fetchError } = await supabase
       .from("articles")
       .select("id, title, link, decoded_url, snippet")
-      .eq("user_id", user.id)
+      .eq("user_id", getSharedUserId())
       .eq("ai_processed", false)
       .eq("url_decoded", true)
       .eq("decode_failed", false)
