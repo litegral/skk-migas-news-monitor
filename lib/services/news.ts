@@ -7,7 +7,7 @@
  *   3. Deduplicate and upsert into the `articles` table
  *   4. Background URL decoding (separate process via /api/news/decode/stream)
  *   5. Crawl full content via Crawl4AI for decoded articles
- *   6. Analyze with SiliconFlow LLM (summary, sentiment, categories)
+ *   6. Analyze with Groq LLM (summary, sentiment, categories)
  *   7. Update articles with AI results and error tracking
  *
  * HARDENED: Includes concurrency control, rate limiting delays, and proper error handling.
@@ -401,41 +401,25 @@ export async function analyzeUnprocessedArticles(
     const now = new Date().toISOString();
 
     try {
-      // 2a. Crawl full content (required — skip analysis if crawl fails).
+      // 2a. Attempt to crawl full content.
       // Use decoded_url for Google News articles, fall back to link for RSS
       const crawlUrl = article.decoded_url || article.link;
       const crawlResult = await crawlArticleContent(crawlUrl);
       const content = crawlResult.data;
+      const crawlFailed = !content;
+      const crawlError = crawlResult.error;
 
-      // If crawl failed, skip analysis — title-only sentiment is unreliable
-      if (!content) {
-        const crawlError = crawlResult.error || "Konten artikel tidak dapat diambil";
-        console.warn(`[news] Crawl failed for "${article.title}", skipping analysis: ${crawlError}`);
-        errors.push(`"${article.title.slice(0, 50)}...": Crawl gagal: ${crawlError}`);
-
-        await supabase
-          .from("articles")
-          .update({
-            ai_processed: true,
-            ai_error: `Crawl gagal: ${crawlError}`,
-            ai_processed_at: now,
-          })
-          .eq("id", article.id);
-
-        failed++;
-
-        // Add delay before next article
-        if (articles.indexOf(article) < articles.length - 1) {
-          await sleep(LLM_DELAY_MS);
-        }
-        continue;
+      // Log crawl status
+      if (crawlFailed) {
+        console.warn(`[news] Crawl failed for "${article.title}": ${crawlError}, falling back to snippet`);
       }
 
-      // 2b. Analyze with LLM (only if we have crawled content).
+      // 2b. Analyze with LLM (use snippet fallback if crawl failed).
+      // The LLM service handles snippet-only analysis gracefully.
       const analysisResult = await analyzeArticle({
         title: article.title,
         snippet: article.snippet,
-        content,
+        content: content, // null if crawl failed — LLM will use snippet
       });
 
       if (!analysisResult.data) {
@@ -448,9 +432,11 @@ export async function analyzeUnprocessedArticles(
           .from("articles")
           .update({
             ai_processed: true,
-            ai_error: errorMsg,
+            ai_error: crawlFailed 
+              ? `Crawl: ${crawlError}; LLM: ${errorMsg}`
+              : errorMsg,
             ai_processed_at: now,
-            full_content: content,
+            full_content: content, // null if crawl failed
           })
           .eq("id", article.id);
 
@@ -467,9 +453,11 @@ export async function analyzeUnprocessedArticles(
           categories: analysisResult.data.categories,
           ai_reason: analysisResult.data.reason,
           ai_processed: true,
-          ai_error: null, // Clear any previous error
+          ai_error: crawlFailed 
+            ? `Crawl gagal: ${crawlError} (dianalisis dari snippet)` 
+            : null,
           ai_processed_at: now,
-          full_content: content,
+          full_content: content, // null if crawl failed
         })
         .eq("id", article.id);
 
@@ -479,6 +467,9 @@ export async function analyzeUnprocessedArticles(
         failed++;
       } else {
         analyzed++;
+        if (crawlFailed) {
+          console.log(`[news] Analyzed "${article.title}" using snippet (crawl failed)`);
+        }
       }
 
       // 2d. Add delay before next LLM call to avoid rate limits.

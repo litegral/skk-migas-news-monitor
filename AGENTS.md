@@ -8,7 +8,7 @@ Next.js 16 news monitoring dashboard for SKK Migas Kalsul (Kalimantan & Sulawesi
 
 **Stack:** TypeScript (strict), React 19, Tailwind CSS v4, Tremor Raw (UI),
 Supabase (Auth + PostgreSQL), RapidAPI Real-Time News Data, RSS feeds,
-SiliconFlow Llama (AI summarization/sentiment/categorization).
+Groq (AI summarization/sentiment/categorization).
 **Deploy target:** Vercel.
 
 ## Build / Lint / Test Commands
@@ -67,7 +67,7 @@ app/
   api/news/
     rapidapi/route.ts        # RapidAPI news search endpoint
     rss/route.ts             # RSS feed fetch + parse endpoint
-    analyze/route.ts         # SiliconFlow LLM analysis endpoint
+    analyze/route.ts         # Groq LLM analysis endpoint
   layout.tsx                 # Root layout
   globals.css                # Tailwind v4 + Tremor animations + theme
 components/
@@ -84,7 +84,7 @@ lib/
   services/
     rapidapi.ts              # RapidAPI fetch + normalize
     rss.ts                   # RSS fetch + parse + normalize
-    llm.ts                   # SiliconFlow API (OpenAI-compatible)
+    llm.ts                   # Groq API (OpenAI-compatible)
     news.ts                  # Orchestrator: fetch, dedupe, upsert, analyze
   types/
     news.ts                  # Article, RSSFeed, SearchQuery interfaces
@@ -100,7 +100,7 @@ proxy.ts                     # Next.js 16 auth proxy (session refresh)
 2. In parallel: call RapidAPI for each query + parse each RSS feed URL.
 3. Normalize all results into a common `Article` shape.
 4. Upsert into `articles` table (deduplicated by `UNIQUE(user_id, link)`).
-5. For articles where `ai_processed = false`, call SiliconFlow Llama.
+5. For articles where `ai_processed = false`, call Groq.
 6. LLM returns: summary, sentiment (positive/negative/neutral), categories.
 7. Update articles with AI results. Display in dashboard with charts + feed.
 
@@ -206,8 +206,8 @@ No Prettier configured. Follow these conventions:
 
 - Route handlers in `app/api/` return `NextResponse.json()`.
 - Consistent response shape: `{ data: T | null, error: string | null }`.
-- Server-only keys (`RAPIDAPI_KEY`, `SILICONFLOW_API_KEY`) -- no `NEXT_PUBLIC_` prefix.
-- SiliconFlow uses OpenAI-compatible chat completions format.
+- Server-only keys (`RAPIDAPI_KEY`, `GROQ_API_KEY`) -- no `NEXT_PUBLIC_` prefix.
+- Groq uses OpenAI-compatible chat completions format.
 - RSS parsing via `rss-parser` library (handles RSS 2.0, Atom, etc.).
 
 ## Environment Variables
@@ -219,8 +219,9 @@ All secrets in `.env.local` (gitignored). Document in `.env.example`.
 | `NEXT_PUBLIC_SUPABASE_URL` | Client + Server | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client + Server | Supabase publishable/anon key |
 | `RAPIDAPI_KEY` | Server only | RapidAPI Real-Time News Data key |
-| `SILICONFLOW_API_KEY` | Server only | SiliconFlow API key |
-| `SILICONFLOW_MODEL` | Server only | Model ID (e.g. `meta-llama/Llama-3.3-70B-Instruct`) |
+| `GROQ_API_KEY` | Server only | Groq API key |
+| `GROQ_API_BASE` | Server only | Optional override (default `https://api.groq.com/openai/v1`) |
+| `GROQ_MODEL` | Server only | Model ID (e.g. `llama-3.3-70b-versatile`) |
 
 ## ESLint Configuration
 

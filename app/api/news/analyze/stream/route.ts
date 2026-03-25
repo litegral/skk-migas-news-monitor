@@ -134,50 +134,25 @@ export async function GET(request: NextRequest): Promise<Response> {
           const now = new Date().toISOString();
 
           try {
-            // 1. Crawl full content (required — skip analysis if crawl fails)
+            // 1. Attempt to crawl full content
             // Use decoded_url for Google News articles, fall back to link for RSS
             const crawlUrl = article.decoded_url || article.link;
             const crawlResult = await crawlArticleContent(crawlUrl);
             const content = crawlResult.data;
+            const crawlFailed = !content;
+            const crawlError = crawlResult.error;
 
-            if (!content) {
-              const crawlError = crawlResult.error || "Konten artikel tidak dapat diambil";
-              console.warn(`[stream] Crawl failed for "${article.title}", skipping analysis: ${crawlError}`);
-
-              // Store error but leave ai_processed=false for retry later
-              await supabase
-                .from("articles")
-                .update({
-                  ai_error: `Crawl gagal: ${crawlError}`,
-                })
-                .eq("id", article.id);
-
-              failed++;
-
-              // Send progress and continue to next article
-              try {
-                controller.enqueue(formatSSE({
-                  type: "progress",
-                  analyzed,
-                  failed,
-                  total,
-                }));
-              } catch {
-                console.log("[stream] Failed to send progress event, client may have disconnected");
-                break;
-              }
-
-              if (i < pendingArticles.length - 1 && !request.signal.aborted) {
-                await sleep(LLM_DELAY_MS);
-              }
-              continue;
+            // Log crawl status
+            if (crawlFailed) {
+              console.warn(`[stream] Crawl failed for "${article.title}": ${crawlError}, falling back to snippet`);
             }
 
-            // 2. Analyze with LLM (only if we have crawled content)
+            // 2. Analyze with LLM (use snippet fallback if crawl failed)
+            // The LLM service handles snippet-only analysis gracefully
             const analysisResult = await analyzeArticle({
               title: article.title,
               snippet: article.snippet,
-              content,
+              content: content, // null if crawl failed — LLM will use snippet
             });
 
             if (!analysisResult.data) {
@@ -189,9 +164,11 @@ export async function GET(request: NextRequest): Promise<Response> {
                 .from("articles")
                 .update({
                   ai_processed: true,
-                  ai_error: errorMsg,
+                  ai_error: crawlFailed 
+                    ? `Crawl: ${crawlError}; LLM: ${errorMsg}`
+                    : errorMsg,
                   ai_processed_at: now,
-                  full_content: content,
+                  full_content: content, // null if crawl failed
                 })
                 .eq("id", article.id);
 
@@ -206,9 +183,11 @@ export async function GET(request: NextRequest): Promise<Response> {
                   categories: analysisResult.data.categories,
                   ai_reason: analysisResult.data.reason,
                   ai_processed: true,
-                  ai_error: null,
+                  ai_error: crawlFailed 
+                    ? `Crawl gagal: ${crawlError} (dianalisis dari snippet)` 
+                    : null,
                   ai_processed_at: now,
-                  full_content: content,
+                  full_content: content, // null if crawl failed
                 })
                 .eq("id", article.id);
 
@@ -217,6 +196,9 @@ export async function GET(request: NextRequest): Promise<Response> {
                 failed++;
               } else {
                 analyzed++;
+                if (crawlFailed) {
+                  console.log(`[stream] Analyzed "${article.title}" using snippet (crawl failed)`);
+                }
               }
             }
           } catch (err) {
