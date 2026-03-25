@@ -10,6 +10,9 @@
  *
  * HARDENED: Includes URL validation, retry logic, bot-protection detection,
  * stealth mode, resource-blocking, and API token authentication.
+ *
+ * Proxies: optional multiline CRAWL4AI_PROXY_URLS (Webshare host:port:user:pass or URLs);
+ * round-robin picks one proxy per crawl after "direct". See buildProxyConfigForCrawler.
  */
 
 import { validateUrl } from "@/lib/utils/validateUrl";
@@ -17,9 +20,11 @@ import { validateUrl } from "@/lib/utils/validateUrl";
 /** Max characters of crawled content to keep for LLM input. */
 const MAX_CONTENT_LENGTH = 4000;
 
-/** Timeout for crawl request (ms). Must accommodate Crawl4AI internal retries:
- *  (1 + max_retries) attempts x ~15s each + buffer. */
-const CRAWL_TIMEOUT_MS = 60_000;
+/** Default timeout when crawling direct-only (ms). */
+const CRAWL_TIMEOUT_MS_DEFAULT = 60_000;
+
+/** Longer timeout when using direct-then-proxy escalation (more attempts). */
+const CRAWL_TIMEOUT_MS_WITH_PROXY = 120_000;
 
 /**
  * Patterns that indicate bot protection / challenge pages.
@@ -76,6 +81,120 @@ function getBaseUrl(): string {
 
 function getApiToken(): string | undefined {
   return process.env.CRAWL4AI_API_TOKEN;
+}
+
+/** Round-robin index for loadProxiesFromEnv() list (module scope). */
+let proxyRoundRobinIndex = 0;
+
+/**
+ * Parse one proxy line: URL with scheme, or Webshare `host:port:username:password`.
+ * Returns Crawl4AI-compatible { server, username?, password? } or null.
+ */
+function parseProxyEntry(line: string): Record<string, string> | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.includes("://")) {
+    try {
+      const u = new URL(trimmed);
+      const hasAuth = Boolean(u.username || u.password);
+      return {
+        server: `${u.protocol}//${u.host}`,
+        ...(hasAuth
+          ? {
+            username: decodeURIComponent(u.username),
+            password: decodeURIComponent(u.password),
+          }
+          : {}),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // Webshare list export: host:port:username:password (host may be domain or IPv4 dotted)
+  const m = trimmed.match(/^(.+):(\d+):([^:]+):(.+)$/);
+  if (!m) return null;
+  const [, host, port, username, password] = m;
+  return {
+    server: `http://${host}:${port}`,
+    username,
+    password,
+  };
+}
+
+/**
+ * Load proxy dicts from CRAWL4AI_PROXY_URLS (multiline or comma-separated),
+ * else fall back to CRAWL4AI_PROXY_URL / CRAWL4AI_PROXY_SERVER.
+ */
+function loadProxiesFromEnv(): Record<string, string>[] {
+  const raw = process.env.CRAWL4AI_PROXY_URLS?.trim();
+  const out: Record<string, string>[] = [];
+
+  if (raw) {
+    const tokens = raw
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (const t of tokens) {
+      const p = parseProxyEntry(t);
+      if (p) out.push(p);
+    }
+  }
+
+  if (out.length > 0) return out;
+
+  const proxyUrl = process.env.CRAWL4AI_PROXY_URL?.trim();
+  const server = process.env.CRAWL4AI_PROXY_SERVER?.trim();
+  const username = process.env.CRAWL4AI_PROXY_USERNAME?.trim();
+  const password = process.env.CRAWL4AI_PROXY_PASSWORD?.trim();
+
+  if (proxyUrl) {
+    const normalized = proxyUrl.includes("://") ? proxyUrl : `http://${proxyUrl}`;
+    const p = parseProxyEntry(normalized);
+    if (p) return [p];
+  }
+
+  if (server) {
+    return [
+      {
+        server,
+        ...(username ? { username } : {}),
+        ...(password ? { password } : {}),
+      },
+    ];
+  }
+
+  return [];
+}
+
+/**
+ * Build CrawlerRunConfig.proxy_config: direct first, then one proxy (round-robin).
+ * See https://docs.crawl4ai.com/advanced/anti-bot-and-fallback/
+ *
+ * Env (optional):
+ * - CRAWL4AI_PROXY_URLS — multiline or comma-separated; Webshare lines or http:// URLs
+ * - CRAWL4AI_PROXY_URL — single URL (legacy)
+ * - CRAWL4AI_PROXY_SERVER + CRAWL4AI_PROXY_USERNAME + CRAWL4AI_PROXY_PASSWORD (legacy)
+ * - CRAWL4AI_USE_PROXY=false — force direct-only
+ */
+// Notice the return type changed to Record<string, string> | undefined
+function buildProxyConfigForCrawler(): Record<string, string> | undefined {
+  const optOut = process.env.CRAWL4AI_USE_PROXY;
+  if (optOut === "0" || optOut === "false") {
+    return undefined;
+  }
+
+  const proxies = loadProxiesFromEnv();
+  if (proxies.length === 0) {
+    return undefined;
+  }
+
+  const i = proxyRoundRobinIndex % proxies.length;
+  proxyRoundRobinIndex += 1;
+
+  // Return ONLY the proxy object, not the array
+  return proxies[i];
 }
 
 /**
@@ -139,61 +258,29 @@ async def on_page_context_created(page, context, **kwargs):
  * Build the /crawl request body with full BrowserConfig + CrawlerRunConfig.
  * Optimized for anti-bot bypass on Indonesian news sites (detik, kompas, tribun, etc.)
  * and memory-constrained 4GB VPS.
+ *
+ * @param proxyConfig - If set, Crawl4AI tries `direct` first, then one round-robin proxy.
  */
-function buildCrawlRequestBody(url: string): Record<string, unknown> {
+function buildCrawlRequestBody(
+  url: string,
+  proxyConfig: any, 
+): Record<string, unknown> {
   return {
     urls: [url],
-    browser_config: {
-      headless: true,
-      text_mode: true,
-      user_agent_mode: "random",
-      // Critical: enables playwright-stealth to modify browser fingerprints
-      // (navigator.webdriver, chrome.runtime, permissions, plugins, etc.)
-      enable_stealth: true,
-      extra_args: [
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--single-process",
-        "--js-flags=--max-old-space-size=256",
-      ],
-    },
     crawler_config: {
-      // Anti-bot / stealth settings
-      magic: true,
-      simulate_user: true,
-      wait_until: "load",
-      delay_before_return_html: 1.0,
-
-      // Crawl4AI internal anti-bot retry: detects Cloudflare challenge pages,
-      // Akamai blocks, CAPTCHA injection, etc. and retries with escalation.
-      // (1 + max_retries) attempts total per URL.
-      max_retries: 2,
-
-      // Content extraction settings
-      word_count_threshold: 30,
-      excluded_tags: [
-        "nav", "footer", "header", "aside", "script",
-        "style", "noscript", "iframe",
-      ],
-      remove_overlay_elements: true,
-
-      // Markdown generation
-      markdown_generator: {
-        content_filter: {
-          fit_markdown: true,
-        },
+      type: "CrawlerRunConfig",
+      params: {
+        magic: true, 
+        simulate_user: true,
+        page_timeout: 60000,
+        
+        // Wait 5 full seconds after the page "loads" for JS frameworks 
+        // to actually put the article text on the screen
+        delay_before_return_html: 5.0, 
+        
+        // WE REMOVED: remove_overlay_elements (it was deleting the articles)
+        // WE REMOVED: word_count_threshold (let's accept whatever it extracts)
       },
-
-      // Page timeout (ms) - longer for stealth mode
-      page_timeout: 30000,
-
-      // Verbose for debugging (can disable later)
-      verbose: false,
-    },
-    // Resource-blocking hooks
-    hooks: {
-      on_page_context_created: RESOURCE_BLOCKING_HOOK,
     },
   };
 }
@@ -274,11 +361,18 @@ export async function crawlArticleContent(url: string): Promise<CrawlResult> {
   const baseUrl = getBaseUrl();
   const apiToken = getApiToken();
 
+  console.log(`[debug] Target Crawl4AI URL: ${baseUrl}`);
+  console.log(`[debug] Token loaded: ${apiToken ? `YES (Length: ${apiToken.length})` : "NO (It is undefined/empty!)"}`);
+
+  const proxyConfig = buildProxyConfigForCrawler();
+  const crawlTimeoutMs = proxyConfig
+    ? CRAWL_TIMEOUT_MS_WITH_PROXY
+    : CRAWL_TIMEOUT_MS_DEFAULT;
+
   try {
-    // Single fetch — Crawl4AI handles anti-bot retries internally via max_retries.
-    // No HTTP-level retry needed; it would compound with internal retries.
+    // Single fetch — Crawl4AI handles anti-bot retries and proxy escalation internally.
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), CRAWL_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), crawlTimeoutMs);
 
     let response: Response;
     try {
@@ -291,10 +385,16 @@ export async function crawlArticleContent(url: string): Promise<CrawlResult> {
         headers["Authorization"] = `Bearer ${apiToken}`;
       }
 
+      if (proxyConfig) {
+        console.log(
+          "[crawler] Using direct-first proxy escalation (see Crawl4AI anti-bot docs)",
+        );
+      }
+
       response = await fetch(`${baseUrl}/crawl`, {
         method: "POST",
         headers,
-        body: JSON.stringify(buildCrawlRequestBody(validatedUrl)),
+        body: JSON.stringify(buildCrawlRequestBody(validatedUrl, proxyConfig)),
         signal: controller.signal,
         cache: "no-store",
       });
@@ -302,8 +402,15 @@ export async function crawlArticleContent(url: string): Promise<CrawlResult> {
       clearTimeout(timeout);
 
       if (!response.ok) {
-        const errMsg = `Crawl4AI HTTP ${response.status}: ${response.statusText}`;
-        console.warn(`[crawler] ${errMsg} for ${validatedUrl}`);
+        // 4xx/5xx here is from the Crawl4AI *service* (POST /crawl), not the news site.
+        // Typical: 401/403 = wrong/missing CRAWL4AI_API_TOKEN or server access rules.
+        // Proxy escalation only runs after the API accepts the request and returns 200 + JSON.
+        let errMsg = `Crawl4AI HTTP ${response.status}: ${response.statusText}`;
+        if (response.status === 401 || response.status === 403) {
+          errMsg +=
+            " (check CRAWL4AI_API_TOKEN matches the container and that /crawl allows your client)";
+        }
+        console.warn(`[crawler] ${errMsg} — target was ${validatedUrl}`);
         return { data: null, error: errMsg };
       }
     } catch (fetchErr) {
@@ -349,7 +456,7 @@ export async function crawlArticleContent(url: string): Promise<CrawlResult> {
     let errorMsg: string;
 
     if (err instanceof DOMException && err.name === "AbortError") {
-      errorMsg = `Timeout after ${CRAWL_TIMEOUT_MS}ms`;
+      errorMsg = `Timeout after ${crawlTimeoutMs}ms`;
     } else if (err instanceof Error) {
       // Check for connection refused (Crawl4AI not running)
       if (
