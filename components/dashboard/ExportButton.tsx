@@ -4,7 +4,7 @@
  * Export Button Component
  *
  * Dropdown button for exporting articles to Excel with date range options.
- * Exports the current filtered view of articles.
+ * Fetches rows via server action (same filters as feed, full result set up to cap).
  */
 
 import { useState, useMemo } from "react";
@@ -20,12 +20,17 @@ import {
 import { RiFileExcel2Line, RiCalendarLine } from "@remixicon/react";
 import { format, subDays, startOfMonth, endOfMonth, endOfDay, startOfDay } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { exportArticlesToExcel, filterArticlesByDateRange } from "@/lib/utils/exportExcel";
-import type { Article } from "@/lib/types/news";
+import { exportArticlesToExcel } from "@/lib/utils/exportExcel";
+import {
+  getArticlesForExportAction,
+  type ArticlesExportQueryParams,
+} from "@/app/actions/articles";
 
 interface ExportButtonProps {
-  /** Articles to export (should be the current filtered view) */
-  articles: Article[];
+  /** Total matching articles in the feed (for enabling the button). */
+  totalCount: number;
+  /** Current feed filters — same as getFeedArticlesAction (without page/limit). */
+  exportQuery: Omit<ArticlesExportQueryParams, "dateFrom" | "dateTo">;
   /** Map of topic ID → topic name for resolving matchedTopicIds */
   topicMap?: Record<string, string>;
 }
@@ -76,7 +81,11 @@ function sanitizeFilename(str: string): string {
     .replace(/[^a-z0-9-]/g, "");
 }
 
-export function ExportButton({ articles, topicMap }: Readonly<ExportButtonProps>) {
+export function ExportButton({
+  totalCount,
+  exportQuery,
+  topicMap,
+}: Readonly<ExportButtonProps>) {
   const [isExporting, setIsExporting] = useState(false);
 
   // Generate month options (last 6 months)
@@ -97,20 +106,33 @@ export function ExportButton({ articles, topicMap }: Readonly<ExportButtonProps>
     setIsExporting(true);
 
     try {
-      // Filter articles by date range if specified
-      let articlesToExport = articles;
-      if (startDate && endDate) {
-        articlesToExport = filterArticlesByDateRange(
-          articles,
-          startOfDay(startDate),
-          endOfDay(endDate)
-        );
+      const base: Omit<ArticlesExportQueryParams, "dateFrom" | "dateTo"> = {
+        search: exportQuery.search,
+        sentiment: exportQuery.sentiment,
+        topics: exportQuery.topics,
+        categories: exportQuery.categories,
+        sources: exportQuery.sources,
+        sortBy: exportQuery.sortBy,
+      };
+
+      const payload: ArticlesExportQueryParams =
+        startDate && endDate
+          ? {
+              ...base,
+              dateFrom: startOfDay(startDate).toISOString(),
+              dateTo: endOfDay(endDate).toISOString(),
+            }
+          : base;
+
+      const { articles: articlesToExport, error } =
+        await getArticlesForExportAction(payload);
+
+      if (error) {
+        console.error("[ExportButton] Export fetch failed:", error);
+        return;
       }
 
-      // Generate filename
       const filename = `berita-skk-migas-${sanitizeFilename(label)}`;
-
-      // Export to Excel (async with ExcelJS)
       await exportArticlesToExcel(articlesToExport, { filename, topicMap });
     } catch (error) {
       console.error("[ExportButton] Export failed:", error);
@@ -126,7 +148,7 @@ export function ExportButton({ articles, topicMap }: Readonly<ExportButtonProps>
       <DropdownMenuTrigger asChild>
         <Button
           variant="secondary"
-          disabled={isExporting || articles.length === 0}
+          disabled={isExporting || totalCount === 0}
           className="gap-2"
         >
           <RiFileExcel2Line className="size-4" />

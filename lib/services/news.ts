@@ -23,6 +23,7 @@ import { fetchGoogleNewsArticles } from "@/lib/services/googlenews";
 import { fetchRSSFeedArticles, filterArticlesByTopics } from "@/lib/services/rss";
 import { crawlArticleContent } from "@/lib/services/crawler";
 import { analyzeArticle } from "@/lib/services/llm";
+import { retrySupabaseMutation } from "@/lib/utils/retrySupabase";
 
 type SupabaseDB = SupabaseClient<Database>;
 
@@ -427,39 +428,53 @@ export async function analyzeUnprocessedArticles(
         console.warn(`[news] LLM analysis failed for "${article.title}": ${errorMsg}`);
         errors.push(`"${article.title.slice(0, 50)}...": ${errorMsg}`);
 
-        // Mark as processed with error tracking.
-        await supabase
-          .from("articles")
-          .update({
-            ai_processed: true,
-            ai_error: crawlFailed 
-              ? `Crawl: ${crawlError}; LLM: ${errorMsg}`
-              : errorMsg,
-            ai_processed_at: now,
-            full_content: content, // null if crawl failed
-          })
-          .eq("id", article.id);
+        const { error: persistErr } = await retrySupabaseMutation(
+          "news/analyze-llm-fail",
+          async () => {
+            const r = await supabase
+              .from("articles")
+              .update({
+                ai_processed: true,
+                ai_error: crawlFailed
+                  ? `Crawl: ${crawlError}; LLM: ${errorMsg}`
+                  : errorMsg,
+                ai_processed_at: now,
+                full_content: content,
+              })
+              .eq("id", article.id);
+            return { error: r.error };
+          },
+        );
 
+        if (persistErr) {
+          console.error(`[news] Failed to persist LLM failure for ${article.id}:`, persistErr);
+        }
         failed++;
         continue;
       }
 
-      // 2c. Update the article with AI results.
-      const { error: uErr } = await supabase
-        .from("articles")
-        .update({
-          summary: analysisResult.data.summary,
-          sentiment: analysisResult.data.sentiment,
-          categories: analysisResult.data.categories,
-          ai_reason: analysisResult.data.reason,
-          ai_processed: true,
-          ai_error: crawlFailed 
-            ? `Crawl gagal: ${crawlError} (dianalisis dari snippet)` 
-            : null,
-          ai_processed_at: now,
-          full_content: content, // null if crawl failed
-        })
-        .eq("id", article.id);
+      const ai = analysisResult.data;
+      const { error: uErr } = await retrySupabaseMutation(
+        "news/analyze-success",
+        async () => {
+          const r = await supabase
+            .from("articles")
+            .update({
+              summary: ai.summary,
+              sentiment: ai.sentiment,
+              categories: ai.categories,
+              ai_reason: ai.reason,
+              ai_processed: true,
+              ai_error: crawlFailed
+                ? `Crawl gagal: ${crawlError} (dianalisis dari snippet)`
+                : null,
+              ai_processed_at: now,
+              full_content: content,
+            })
+            .eq("id", article.id);
+          return { error: r.error };
+        },
+      );
 
       if (uErr) {
         console.error(`[news] Failed to update article ${article.id}:`, uErr);
@@ -481,15 +496,24 @@ export async function analyzeUnprocessedArticles(
       console.error(`[news] Error processing article "${article.title}":`, errorMsg);
       errors.push(`"${article.title.slice(0, 50)}...": ${errorMsg}`);
 
-      // Mark as processed with error tracking.
-      await supabase
-        .from("articles")
-        .update({
-          ai_processed: true,
-          ai_error: errorMsg,
-          ai_processed_at: now,
-        })
-        .eq("id", article.id);
+      const { error: catchErr } = await retrySupabaseMutation(
+        "news/analyze-catch",
+        async () => {
+          const r = await supabase
+            .from("articles")
+            .update({
+              ai_processed: true,
+              ai_error: errorMsg,
+              ai_processed_at: now,
+            })
+            .eq("id", article.id);
+          return { error: r.error };
+        },
+      );
+
+      if (catchErr) {
+        console.error(`[news] Failed to persist catch error for ${article.id}:`, catchErr);
+      }
 
       failed++;
     }

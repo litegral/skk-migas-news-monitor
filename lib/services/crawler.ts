@@ -26,6 +26,14 @@ const CRAWL_TIMEOUT_MS_DEFAULT = 60_000;
 /** Longer timeout when using direct-then-proxy escalation (more attempts). */
 const CRAWL_TIMEOUT_MS_WITH_PROXY = 120_000;
 
+/** Crawl4AI service may return transient 5xx; retry POST before snippet fallback. */
+const CRAWL4AI_RETRYABLE_HTTP = new Set([500, 502, 503, 504]);
+const MAX_CRAWL4AI_HTTP_ATTEMPTS = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Patterns that indicate bot protection / challenge pages.
  * These pages contain no useful article content.
@@ -263,23 +271,35 @@ async def on_page_context_created(page, context, **kwargs):
  */
 function buildCrawlRequestBody(
   url: string,
-  proxyConfig: any, 
+  proxyConfig: Record<string, string> | undefined, 
 ): Record<string, unknown> {
   return {
     urls: [url],
+    
+    // 1. BROWSER CONFIG
+    browser_config: {
+      type: "BrowserConfig",
+      params: {
+        headless: true,
+        extra_args: [
+          "--no-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+        ],
+      },
+    },
+
+    // 2. CRAWLER CONFIG (This is where the Proxy goes in v0.8!)
     crawler_config: {
       type: "CrawlerRunConfig",
       params: {
-        magic: true, 
+        magic: true, // Bypasses Cloudflare
         simulate_user: true,
         page_timeout: 60000,
+        delay_before_return_html: 5.0, // Wait for overlays to close
         
-        // Wait 5 full seconds after the page "loads" for JS frameworks 
-        // to actually put the article text on the screen
-        delay_before_return_html: 5.0, 
-        
-        // WE REMOVED: remove_overlay_elements (it was deleting the articles)
-        // WE REMOVED: word_count_threshold (let's accept whatever it extracts)
+        // Safely inject the Webshare proxy dictionary
+        ...(proxyConfig ? { proxy_config: proxyConfig } : {}),
       },
     },
   };
@@ -370,52 +390,69 @@ export async function crawlArticleContent(url: string): Promise<CrawlResult> {
     : CRAWL_TIMEOUT_MS_DEFAULT;
 
   try {
-    // Single fetch — Crawl4AI handles anti-bot retries and proxy escalation internally.
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), crawlTimeoutMs);
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
 
-    let response: Response;
-    try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
+    if (apiToken) {
+      headers["Authorization"] = `Bearer ${apiToken}`;
+    }
 
-      // Add auth header if token is configured
-      if (apiToken) {
-        headers["Authorization"] = `Bearer ${apiToken}`;
+    if (proxyConfig) {
+      console.log(
+        "[crawler] Using direct-first proxy escalation (see Crawl4AI anti-bot docs)",
+      );
+    }
+
+    let response: Response | undefined;
+
+    for (let attempt = 0; attempt < MAX_CRAWL4AI_HTTP_ATTEMPTS; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), crawlTimeoutMs);
+
+      try {
+        response = await fetch(`${baseUrl}/crawl`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(buildCrawlRequestBody(validatedUrl, proxyConfig)),
+          signal: controller.signal,
+          cache: "no-store",
+        });
+      } catch (fetchErr) {
+        clearTimeout(timeout);
+        throw fetchErr;
       }
-
-      if (proxyConfig) {
-        console.log(
-          "[crawler] Using direct-first proxy escalation (see Crawl4AI anti-bot docs)",
-        );
-      }
-
-      response = await fetch(`${baseUrl}/crawl`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(buildCrawlRequestBody(validatedUrl, proxyConfig)),
-        signal: controller.signal,
-        cache: "no-store",
-      });
-
       clearTimeout(timeout);
 
-      if (!response.ok) {
-        // 4xx/5xx here is from the Crawl4AI *service* (POST /crawl), not the news site.
-        // Typical: 401/403 = wrong/missing CRAWL4AI_API_TOKEN or server access rules.
-        // Proxy escalation only runs after the API accepts the request and returns 200 + JSON.
-        let errMsg = `Crawl4AI HTTP ${response.status}: ${response.statusText}`;
-        if (response.status === 401 || response.status === 403) {
-          errMsg +=
-            " (check CRAWL4AI_API_TOKEN matches the container and that /crawl allows your client)";
-        }
+      if (response.ok) {
+        break;
+      }
+
+      // 4xx/5xx here is from the Crawl4AI *service* (POST /crawl), not the news site.
+      let errMsg = `Crawl4AI HTTP ${response.status}: ${response.statusText}`;
+      if (response.status === 401 || response.status === 403) {
+        errMsg +=
+          " (check CRAWL4AI_API_TOKEN matches the container and that /crawl allows your client)";
+      }
+
+      const canRetry =
+        CRAWL4AI_RETRYABLE_HTTP.has(response.status) &&
+        attempt < MAX_CRAWL4AI_HTTP_ATTEMPTS - 1;
+
+      if (!canRetry) {
         console.warn(`[crawler] ${errMsg} — target was ${validatedUrl}`);
         return { data: null, error: errMsg };
       }
-    } catch (fetchErr) {
-      clearTimeout(timeout);
-      throw fetchErr;
+
+      const delayMs = 500 * 2 ** attempt + Math.floor(Math.random() * 200);
+      console.warn(
+        `[crawler] ${errMsg} — retry ${attempt + 1}/${MAX_CRAWL4AI_HTTP_ATTEMPTS - 1} in ${delayMs}ms, target=${validatedUrl}`,
+      );
+      await sleep(delayMs);
+    }
+
+    if (!response?.ok) {
+      return { data: null, error: "Crawl4AI request failed" };
     }
 
     const json = (await response.json()) as Crawl4AICrawlResponse;

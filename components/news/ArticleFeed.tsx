@@ -207,7 +207,18 @@ export function ArticleFeed({
               </span>
             )}
           </Button>
-          <ExportButton articles={articles} topicMap={topicMap} />
+          <ExportButton
+            totalCount={total}
+            topicMap={topicMap}
+            exportQuery={{
+              search: debouncedSearch,
+              sentiment: sentimentFilter,
+              topics: selectedTopics,
+              categories: selectedCategories,
+              sources: selectedSources,
+              sortBy,
+            }}
+          />
         </div>
       </div>
 

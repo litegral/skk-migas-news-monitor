@@ -17,6 +17,7 @@ import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import { crawlArticleContent } from "@/lib/services/crawler";
 import { analyzeArticle } from "@/lib/services/llm";
+import { retrySupabaseMutation } from "@/lib/utils/retrySupabase";
 
 /** Delay between LLM calls to avoid rate limits (ms) */
 const LLM_DELAY_MS = 500;
@@ -160,37 +161,54 @@ export async function GET(request: NextRequest): Promise<Response> {
               const errorMsg = analysisResult.error || "Unknown LLM error";
               console.warn(`[stream] LLM analysis failed for "${article.title}": ${errorMsg}`);
 
-              // Mark as processed with error tracking
-              await supabase
-                .from("articles")
-                .update({
-                  ai_processed: true,
-                  ai_error: crawlFailed 
-                    ? `Crawl: ${crawlError}; LLM: ${errorMsg}`
-                    : errorMsg,
-                  ai_processed_at: now,
-                  full_content: content, // null if crawl failed
-                })
-                .eq("id", article.id);
+              const { error: persistErr } = await retrySupabaseMutation(
+                "stream/analyze-llm-fail",
+                async () => {
+                  const r = await supabase
+                    .from("articles")
+                    .update({
+                      ai_processed: true,
+                      ai_error: crawlFailed
+                        ? `Crawl: ${crawlError}; LLM: ${errorMsg}`
+                        : errorMsg,
+                      ai_processed_at: now,
+                      full_content: content,
+                    })
+                    .eq("id", article.id);
+                  return { error: r.error };
+                },
+              );
 
+              if (persistErr) {
+                console.error(
+                  `[stream] Failed to persist LLM failure state for ${article.id}:`,
+                  persistErr,
+                );
+              }
               failed++;
             } else {
-              // Update the article with AI results
-              const { error: updateError } = await supabase
-                .from("articles")
-                .update({
-                  summary: analysisResult.data.summary,
-                  sentiment: analysisResult.data.sentiment,
-                  categories: analysisResult.data.categories,
-                  ai_reason: analysisResult.data.reason,
-                  ai_processed: true,
-                  ai_error: crawlFailed 
-                    ? `Crawl gagal: ${crawlError} (dianalisis dari snippet)` 
-                    : null,
-                  ai_processed_at: now,
-                  full_content: content, // null if crawl failed
-                })
-                .eq("id", article.id);
+              const ai = analysisResult.data;
+              const { error: updateError } = await retrySupabaseMutation(
+                "stream/analyze-success",
+                async () => {
+                  const r = await supabase
+                    .from("articles")
+                    .update({
+                      summary: ai.summary,
+                      sentiment: ai.sentiment,
+                      categories: ai.categories,
+                      ai_reason: ai.reason,
+                      ai_processed: true,
+                      ai_error: crawlFailed
+                        ? `Crawl gagal: ${crawlError} (dianalisis dari snippet)`
+                        : null,
+                      ai_processed_at: now,
+                      full_content: content,
+                    })
+                    .eq("id", article.id);
+                  return { error: r.error };
+                },
+              );
 
               if (updateError) {
                 console.error(`[stream] Failed to update article ${article.id}:`, updateError);
@@ -206,15 +224,27 @@ export async function GET(request: NextRequest): Promise<Response> {
             const errorMsg = err instanceof Error ? err.message : "Unknown error";
             console.error(`[stream] Error processing article "${article.title}":`, errorMsg);
 
-            // Mark as processed with error tracking
-            await supabase
-              .from("articles")
-              .update({
-                ai_processed: true,
-                ai_error: errorMsg,
-                ai_processed_at: now,
-              })
-              .eq("id", article.id);
+            const { error: catchPersistErr } = await retrySupabaseMutation(
+              "stream/analyze-catch",
+              async () => {
+                const r = await supabase
+                  .from("articles")
+                  .update({
+                    ai_processed: true,
+                    ai_error: errorMsg,
+                    ai_processed_at: now,
+                  })
+                  .eq("id", article.id);
+                return { error: r.error };
+              },
+            );
+
+            if (catchPersistErr) {
+              console.error(
+                `[stream] Failed to persist error state for ${article.id}:`,
+                catchPersistErr,
+              );
+            }
 
             failed++;
           }

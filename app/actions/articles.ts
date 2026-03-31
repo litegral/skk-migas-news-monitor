@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { getActiveTopics, dashboardArticleSelect, DashboardArticleRow, toDashboardArticle } from "@/lib/services/dashboard";
 import type { Article, Sentiment } from "@/lib/types/news";
 
+/** Max rows returned in one export (PostgREST single-response limit). */
+const MAX_EXPORT_ROWS = 10_000;
+
 export interface FeedQueryParams {
     page: number;
     limit: number;
@@ -15,6 +18,12 @@ export interface FeedQueryParams {
     sources?: string[];
     sortBy?: "newest" | "oldest";
 }
+
+/** Same filters as the feed, without pagination; optional inclusive `published_at` bounds (ISO strings). */
+export type ArticlesExportQueryParams = Omit<FeedQueryParams, "page" | "limit"> & {
+    dateFrom?: string | null;
+    dateTo?: string | null;
+};
 
 export async function getFeedArticlesAction(params: FeedQueryParams): Promise<{ articles: Article[]; total: number; error?: string }> {
     try {
@@ -83,6 +92,86 @@ export async function getFeedArticlesAction(params: FeedQueryParams): Promise<{ 
         return { articles, total: count ?? 0 };
     } catch (err: unknown) {
         return { articles: [], total: 0, error: err instanceof Error ? err.message : "Unknown error" };
+    }
+}
+
+/**
+ * Fetches all articles matching the current feed filters (up to MAX_EXPORT_ROWS).
+ * Used for Excel export instead of paginated client state so date/month presets include
+ * every matching row, not only the current page.
+ */
+export async function getArticlesForExportAction(
+    params: ArticlesExportQueryParams,
+): Promise<{ articles: Article[]; error?: string }> {
+    try {
+        const supabase = await createClient();
+        const { data: claimsData } = await supabase.auth.getClaims();
+        const userId = claimsData?.claims?.sub;
+        if (!userId) return { articles: [], error: "Unauthorized" };
+
+        const { activeTopicIds, topicMap } = await getActiveTopics();
+        if (activeTopicIds.length === 0) return { articles: [] };
+
+        let filterTopicIds = activeTopicIds;
+        if (params.topics && params.topics.length > 0) {
+            filterTopicIds = Object.entries(topicMap)
+                .filter((entry) => params.topics!.includes(entry[1]))
+                .map(([id]) => id);
+        }
+
+        if (filterTopicIds.length === 0) {
+            return { articles: [] };
+        }
+
+        let query = supabase
+            .from("articles")
+            .select(dashboardArticleSelect)
+            .overlaps("matched_topic_ids", filterTopicIds);
+
+        if (params.sentiment && params.sentiment !== "all") {
+            query = query.eq("sentiment", params.sentiment);
+        }
+
+        if (params.search && params.search.trim() !== "") {
+            const searchTerms = `%${params.search.trim()}%`;
+            query = query.or(`title.ilike.${searchTerms},summary.ilike.${searchTerms},source_name.ilike.${searchTerms}`);
+        }
+
+        if (params.categories && params.categories.length > 0) {
+            query = query.overlaps("categories", params.categories);
+        }
+
+        if (params.sources && params.sources.length > 0) {
+            query = query.in("source_name", params.sources);
+        }
+
+        if (params.dateFrom && params.dateTo) {
+            query = query
+                .gte("published_at", params.dateFrom)
+                .lte("published_at", params.dateTo);
+        }
+
+        const ascending = params.sortBy === "oldest";
+
+        query = query
+            .order("published_at", { ascending, nullsFirst: false })
+            .order("id", { ascending: false })
+            .limit(MAX_EXPORT_ROWS);
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.error("Error fetching articles for export:", error);
+            return { articles: [], error: error.message };
+        }
+
+        const rows = (data ?? []) as DashboardArticleRow[];
+        return { articles: rows.map(toDashboardArticle) };
+    } catch (err: unknown) {
+        return {
+            articles: [],
+            error: err instanceof Error ? err.message : "Unknown error",
+        };
     }
 }
 
