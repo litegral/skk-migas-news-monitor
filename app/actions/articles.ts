@@ -1,9 +1,13 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTopics, dashboardArticleSelect, DashboardArticleRow, toDashboardArticle } from "@/lib/services/dashboard";
 import type { Article, Sentiment } from "@/lib/types/news";
+import { validateString, validateUuid } from "@/lib/utils/validateInput";
+import { validateUrl } from "@/lib/utils/validateUrl";
 
 /** Max rows returned in one export (PostgREST single-response limit). */
 const MAX_EXPORT_ROWS = 10_000;
@@ -219,5 +223,160 @@ export async function getArticleFilterOptionsAction(): Promise<{ categories: str
         };
     } catch (err: unknown) {
         return { categories: [], sources: [], error: err instanceof Error ? err.message : "Unknown error" };
+    }
+}
+
+export interface AddCustomArticleInput {
+    title: string;
+    link: string;
+    snippet?: string;
+    sourceName?: string;
+    publishedAt?: string | null;
+    topicIds: string[];
+}
+
+export interface AddCustomArticleResult {
+    success: boolean;
+    error?: string;
+}
+
+/**
+ * Insert a user-submitted article into the shared workspace. The normal
+ * decode → crawl → analyze pipeline picks it up on the next sync/cron run.
+ */
+export async function addCustomArticleAction(
+    input: AddCustomArticleInput,
+): Promise<AddCustomArticleResult> {
+    try {
+        const supabase = await createClient();
+        const { data: claimsData } = await supabase.auth.getClaims();
+        if (!claimsData?.claims?.sub) {
+            return { success: false, error: "Unauthorized" };
+        }
+
+        const titleValidation = validateString(input.title, "title", {
+            minLength: 1,
+            maxLength: 500,
+        });
+        if (!titleValidation.valid) {
+            return { success: false, error: titleValidation.error };
+        }
+
+        const urlValidation = validateUrl(input.link, { maxLength: 2048 });
+        if (!urlValidation.valid || !urlValidation.normalizedUrl) {
+            return { success: false, error: urlValidation.error ?? "Invalid URL" };
+        }
+        const normalizedLink = urlValidation.normalizedUrl;
+
+        let snippet: string | null = null;
+        if (input.snippet !== undefined && input.snippet !== null && input.snippet.trim() !== "") {
+            const sn = validateString(input.snippet, "snippet", {
+                minLength: 1,
+                maxLength: 1000,
+            });
+            if (!sn.valid) {
+                return { success: false, error: sn.error };
+            }
+            snippet = sn.value!;
+        }
+
+        let sourceName: string | null = null;
+        if (input.sourceName !== undefined && input.sourceName !== null && input.sourceName.trim() !== "") {
+            const sn = validateString(input.sourceName, "source name", {
+                minLength: 1,
+                maxLength: 200,
+            });
+            if (!sn.valid) {
+                return { success: false, error: sn.error };
+            }
+            sourceName = sn.value!;
+        }
+
+        let publishedAt: string | null = null;
+        if (input.publishedAt !== undefined && input.publishedAt !== null && input.publishedAt.trim() !== "") {
+            const d = new Date(input.publishedAt);
+            if (Number.isNaN(d.getTime())) {
+                return { success: false, error: "Invalid published date" };
+            }
+            publishedAt = d.toISOString();
+        }
+
+        if (!Array.isArray(input.topicIds) || input.topicIds.length === 0) {
+            return { success: false, error: "Select at least one topic" };
+        }
+
+        const uniqueTopicIds = [...new Set(input.topicIds)];
+        const validatedTopicIds: string[] = [];
+        for (const id of uniqueTopicIds) {
+            const idVal = validateUuid(id, "topic id");
+            if (!idVal.valid) {
+                return { success: false, error: idVal.error };
+            }
+            validatedTopicIds.push(idVal.value!);
+        }
+
+        const { data: enabledTopics, error: topicsErr } = await supabase
+            .from("topics")
+            .select("id")
+            .eq("enabled", true)
+            .in("id", validatedTopicIds);
+
+        if (topicsErr) {
+            console.error("[articles] addCustomArticle topics:", topicsErr.message);
+            return { success: false, error: "Failed to validate topics" };
+        }
+
+        if (!enabledTopics || enabledTopics.length !== validatedTopicIds.length) {
+            return {
+                success: false,
+                error: "One or more topics are invalid or disabled",
+            };
+        }
+
+        let sourceUrl: string | null = null;
+        try {
+            sourceUrl = new URL(normalizedLink).origin;
+        } catch {
+            sourceUrl = null;
+        }
+
+        const sharedId = getSharedUserId();
+
+        const { error: insertErr } = await supabase.from("articles").insert({
+            user_id: sharedId,
+            title: titleValidation.value!,
+            link: normalizedLink,
+            snippet,
+            photo_url: null,
+            source_name: sourceName,
+            source_url: sourceUrl,
+            published_at: publishedAt,
+            source_type: "custom",
+            matched_topic_ids: validatedTopicIds,
+            ai_processed: false,
+            url_decoded: false,
+            decode_failed: false,
+        });
+
+        if (insertErr) {
+            if (insertErr.code === "23505") {
+                return {
+                    success: false,
+                    error: "An article with this URL already exists",
+                };
+            }
+            console.error("[articles] addCustomArticle insert:", insertErr.message);
+            return { success: false, error: "Failed to save article" };
+        }
+
+        revalidatePath("/settings");
+        revalidatePath("/dashboard");
+        return { success: true };
+    } catch (err) {
+        console.error("[articles] addCustomArticle:", err);
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Failed to save article",
+        };
     }
 }

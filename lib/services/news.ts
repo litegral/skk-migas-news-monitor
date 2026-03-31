@@ -602,7 +602,7 @@ async function upsertArticles(
       source_name: a.sourceName,
       source_url: a.sourceUrl,
       published_at: a.publishedAt,
-      source_type: a.sourceType as "googlenews" | "rss",
+      source_type: a.sourceType as "googlenews" | "rss" | "custom" | "rapidapi",
       matched_topic_ids: a.matchedTopicIds ?? [],
       ai_processed: false,
       url_decoded: a.urlDecoded ?? (a.sourceType === "rss"),

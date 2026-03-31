@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/Card";
+import { CustomArticleForm } from "@/components/settings/CustomArticleForm";
 import { RSSFeedManager } from "@/components/settings/RSSFeedManager";
 import { TopicManager } from "@/components/settings/TopicManager";
 
@@ -62,6 +63,10 @@ export default async function SettingsPage() {
             <RSSFeedManager feeds={rssFeeds ?? []} />
           </div>
         </Card>
+      </div>
+
+      <div className="mt-6">
+        <CustomArticleForm topics={topics ?? []} />
       </div>
     </>
   );

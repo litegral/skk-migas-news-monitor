@@ -15,8 +15,8 @@ import { getSharedUserId } from "@/lib/config/sharedData";
 import { runNewsPipelineSync } from "@/lib/jobs/newsPipeline";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 
-/** Match analyze route; raise on Pro if you need longer decode batches. */
-export const maxDuration = 60;
+/** Allow fetch + decode + analyze in one invocation; raise on Pro if needed. */
+export const maxDuration = 120;
 
 function verifyCronSecret(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET?.trim();
@@ -61,7 +61,7 @@ async function handleCron(request: NextRequest): Promise<NextResponse> {
 
   const decodeArticleLimit = envInt("CRON_DECODE_ARTICLE_LIMIT", 12);
   const analyzeBatchSize = envInt("CRON_ANALYZE_BATCH_SIZE", 2);
-  const timeBudgetMs = envInt("CRON_TIME_BUDGET_MS", 50_000);
+  const timeBudgetMs = envInt("CRON_TIME_BUDGET_MS", 110_000);
 
   try {
     const supabase = createServiceRoleClient();

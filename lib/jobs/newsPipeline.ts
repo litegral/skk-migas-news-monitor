@@ -77,7 +77,9 @@ export async function runNewsPipelineSync(
     };
   }
 
-  if (timeLeftMs() < 8000) {
+  // Always run decode when there is budget left. (Empty queue returns immediately;
+  // skipping here caused long fetches to consume the whole budget and skip decode entirely.)
+  if (timeLeftMs() < 2000) {
     return {
       fetch: fetchResult,
       decode: { decoded: 0, failed: 0, total: 0 },

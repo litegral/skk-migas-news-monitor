@@ -10,7 +10,7 @@
 export type Sentiment = "positive" | "negative" | "neutral";
 
 /** Where the article was sourced from. */
-export type SourceType = "googlenews" | "rss";
+export type SourceType = "googlenews" | "rss" | "custom" | "rapidapi";
 
 /**
  * Normalised article shape shared by all data sources.

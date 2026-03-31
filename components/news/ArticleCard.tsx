@@ -7,6 +7,7 @@ import { RiExternalLinkLine, RiHashtag, RiInformationLine } from "@remixicon/rea
 import type { Article } from "@/lib/types/news";
 import { Card } from "@/components/ui/Card";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/Tooltip";
+import { Badge } from "@/components/ui/Badge";
 import { SentimentBadge } from "./SentimentBadge";
 import { CategoryBadge } from "./CategoryBadge";
 import { cx } from "@/lib/utils";
@@ -68,7 +69,12 @@ export function ArticleCard({ article, topicMap }: Readonly<ArticleCardProps>) {
         </div>
 
         {/* Source + date */}
-        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+          {article.sourceType === "custom" && (
+            <Badge variant="neutral" className="px-1.5 py-0 text-[10px] font-medium uppercase tracking-wide">
+              Manual
+            </Badge>
+          )}
           {article.sourceName && <span>{article.sourceName}</span>}
           {article.sourceName && publishedDate && (
             <span aria-hidden="true">·</span>

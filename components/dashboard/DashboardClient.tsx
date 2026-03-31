@@ -6,6 +6,7 @@
  */
 
 import React, { useTransition } from "react";
+import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   RiSettings3Line,
@@ -40,6 +41,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/DropdownMenu";
+import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { cx } from "@/lib/utils";
 
@@ -145,6 +147,9 @@ export function DashboardClient({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <Button asChild variant="secondary">
+            <Link href="/settings#custom-article">Tambah artikel</Link>
+          </Button>
           <SyncButton
             failedCount={failedCount}
             pendingCount={pendingCount}

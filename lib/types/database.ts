@@ -97,7 +97,7 @@ export interface Database {
           source_name: string | null;
           source_url: string | null;
           published_at: string | null;
-          source_type: "googlenews" | "rss";
+          source_type: "googlenews" | "rss" | "custom" | "rapidapi";
           summary: string | null;
           sentiment: "positive" | "negative" | "neutral" | null;
           categories: string[] | null;
@@ -130,7 +130,7 @@ export interface Database {
           source_name?: string | null;
           source_url?: string | null;
           published_at?: string | null;
-          source_type: "googlenews" | "rss";
+          source_type: "googlenews" | "rss" | "custom" | "rapidapi";
           summary?: string | null;
           sentiment?: "positive" | "negative" | "neutral" | null;
           categories?: string[] | null;
@@ -156,7 +156,7 @@ export interface Database {
           source_name?: string | null;
           source_url?: string | null;
           published_at?: string | null;
-          source_type?: "googlenews" | "rss";
+          source_type?: "googlenews" | "rss" | "custom" | "rapidapi";
           summary?: string | null;
           sentiment?: "positive" | "negative" | "neutral" | null;
           categories?: string[] | null;
