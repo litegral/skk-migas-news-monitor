@@ -14,6 +14,7 @@ import type { Database } from "@/lib/types/database";
  *    Components) and the response (for the browser).
  *
  * If there is no authenticated user, the request is redirected to `/login`.
+ * Cron routes under `/api/cron` use CRON_SECRET instead of a session.
  */
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -47,7 +48,8 @@ export async function updateSession(request: NextRequest) {
   if (
     !user &&
     !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/auth")
+    !request.nextUrl.pathname.startsWith("/auth") &&
+    !request.nextUrl.pathname.startsWith("/api/cron")
   ) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
