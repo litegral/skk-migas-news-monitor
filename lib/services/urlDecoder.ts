@@ -277,9 +277,11 @@ export async function decodeArticlesWithProgress(
   supabase: SupabaseDB,
   userId: string,
   onProgress: DecodeProgressCallback,
+  options?: Readonly<{ articleLimit?: number }>,
 ): Promise<{ decoded: number; failed: number; total: number }> {
+  const articleLimit = options?.articleLimit ?? 100;
   // Get articles to decode
-  const articles = await getArticlesToDecode(supabase, userId);
+  const articles = await getArticlesToDecode(supabase, userId, articleLimit);
   const total = articles.length;
 
   if (total === 0) {
