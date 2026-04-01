@@ -241,7 +241,7 @@ export function ArticleFeed({
       {/* Filter options panel */}
       {showFilters && (
         <div className="flex flex-col gap-4 rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
             {/* Sort */}
             <div className="flex items-center gap-2">
               <label htmlFor="sort" className="text-sm text-gray-600 dark:text-gray-400">Sort:</label>
@@ -274,9 +274,9 @@ export function ArticleFeed({
 
             {/* Category filter */}
             {availableCategories.length > 0 && (
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
                 <label className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">Kategori:</label>
-                <div className="w-48">
+                <div className="w-full min-w-0 sm:w-48">
                   <MultiSelect
                     options={availableCategories}
                     selected={selectedCategories}
@@ -290,9 +290,9 @@ export function ArticleFeed({
 
             {/* Source filter */}
             {availableSources.length > 0 && (
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
                 <label className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">Sumber:</label>
-                <div className="w-48">
+                <div className="w-full min-w-0 sm:w-48">
                   <MultiSelect
                     options={availableSources}
                     selected={selectedSources}

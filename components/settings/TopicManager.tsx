@@ -415,8 +415,8 @@ export function TopicManager({ topics }: Readonly<TopicManagerProps>) {
               ) : (
                 // View mode
                 <>
-                  <div className="flex items-center gap-3">
-                    <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-50">
+                  <div className="flex min-w-0 flex-wrap items-center gap-3">
+                    <span className="min-w-0 flex-1 text-sm font-medium text-gray-900 dark:text-gray-50">
                       {topic.name}
                     </span>
                     <button

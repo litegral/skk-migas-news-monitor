@@ -193,7 +193,7 @@ export function DashboardClient({
           ═══════════════════════════════════════════════════════════════════════ */}
       <section className={cx("transition-opacity duration-300", isPending && "opacity-60")}>
         {/* Section header with settings and period selector */}
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50">
               Ringkasan
@@ -234,12 +234,12 @@ export function DashboardClient({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <span className="text-sm text-gray-500 dark:text-gray-400">
               Periode:
             </span>
             <Select value={period} onValueChange={(v) => handlePeriodChange(v as DashboardPeriod)} disabled={isPending}>
-              <SelectTrigger className="w-28">
+              <SelectTrigger className="w-28 shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

@@ -38,7 +38,7 @@ export default async function SettingsPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Topics section */}
-        <Card>
+        <Card className="p-4 sm:p-6">
           <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50">
             Topik
           </h2>
@@ -51,7 +51,7 @@ export default async function SettingsPage() {
         </Card>
 
         {/* RSS Feeds section */}
-        <Card>
+        <Card className="p-4 sm:p-6">
           <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50">
             RSS Feeds
           </h2>

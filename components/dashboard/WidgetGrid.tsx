@@ -76,7 +76,7 @@ export function WidgetGrid({
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={cx(
-              "grid grid-cols-4 gap-4 transition-all duration-200",
+              "grid min-w-0 grid-cols-1 gap-4 transition-all duration-200 md:grid-cols-2 lg:grid-cols-4",
               isEditMode && "rounded-lg border-2 border-dashed border-blue-300 bg-blue-50/30 p-4 dark:border-blue-700 dark:bg-blue-950/20",
             )}
           >

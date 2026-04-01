@@ -31,11 +31,11 @@ interface DraggableWidgetProps {
   children: React.ReactNode;
 }
 
-/** CSS classes for grid column spans */
+/** CSS classes for grid column spans (1 / 2 / 4 cols at lg; full-width on small screens) */
 const sizeClasses: Record<WidgetSize, string> = {
   sm: "col-span-1",
-  md: "col-span-2",
-  lg: "col-span-4",
+  md: "col-span-1 md:col-span-2 lg:col-span-2",
+  lg: "col-span-1 md:col-span-2 lg:col-span-4",
 };
 
 export function DraggableWidget({

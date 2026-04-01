@@ -42,7 +42,7 @@ function DashboardShellInner({ children }: Readonly<{ children: React.ReactNode 
           isCollapsed ? "lg:pl-0" : "lg:pl-60",
         )}
       >
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto min-w-0 max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           {children}
         </div>
       </main>

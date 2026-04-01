@@ -275,7 +275,10 @@ export function SyncStatusIndicator({
         </button>
       </PopoverTrigger>
 
-      <PopoverContent align="end" className="w-80 p-3">
+      <PopoverContent
+        align="end"
+        className="w-[min(20rem,calc(100vw-2rem))] p-3"
+      >
         <div className="space-y-3">
           {/* Primary pipeline: analisis / ambil berita */}
           <div className="flex flex-col gap-1.5">

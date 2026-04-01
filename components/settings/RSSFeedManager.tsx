@@ -180,14 +180,14 @@ export function RSSFeedManager({ feeds }: Readonly<RSSFeedManagerProps>) {
             <div
               key={feed.id}
               className={cx(
-                "flex items-center gap-3 rounded-md border p-3",
+                "flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:gap-3",
                 "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950",
               )}
             >
               {editingId === feed.id ? (
                 // Edit mode
                 <>
-                  <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
                     <Input
                       value={editValues.name}
                       onChange={(e) =>
@@ -206,30 +206,32 @@ export function RSSFeedManager({ feeds }: Readonly<RSSFeedManagerProps>) {
                       type="url"
                     />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleUpdate(feed.id)}
-                    disabled={isLoading}
-                    className="rounded-md p-1.5 text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-950"
-                    aria-label="Save"
-                  >
-                    <RiCheckLine className="size-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={cancelEditing}
-                    disabled={isLoading}
-                    className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-                    aria-label="Cancel"
-                  >
-                    <RiCloseLine className="size-4" />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleUpdate(feed.id)}
+                      disabled={isLoading}
+                      className="rounded-md p-1.5 text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-950"
+                      aria-label="Save"
+                    >
+                      <RiCheckLine className="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEditing}
+                      disabled={isLoading}
+                      className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+                      aria-label="Cancel"
+                    >
+                      <RiCloseLine className="size-4" />
+                    </button>
+                  </div>
                 </>
               ) : (
                 // View mode
                 <>
                   <div
-                    className="flex flex-1 cursor-pointer flex-col gap-0.5"
+                    className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5"
                     onClick={() => startEditing(feed)}
                   >
                     <span className="text-sm font-medium text-gray-900 dark:text-gray-50">
@@ -239,20 +241,22 @@ export function RSSFeedManager({ feeds }: Readonly<RSSFeedManagerProps>) {
                       {feed.url}
                     </span>
                   </div>
-                  <Switch
-                    checked={feed.enabled}
-                    onCheckedChange={(checked) => handleToggle(feed.id, checked)}
-                    size="small"
-                    aria-label={feed.enabled ? "Disable feed" : "Enable feed"}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(feed.id)}
-                    className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950 dark:hover:text-red-400"
-                    aria-label="Delete feed"
-                  >
-                    <RiDeleteBinLine className="size-4" />
-                  </button>
+                  <div className="flex shrink-0 items-center justify-end gap-2 sm:justify-start">
+                    <Switch
+                      checked={feed.enabled}
+                      onCheckedChange={(checked) => handleToggle(feed.id, checked)}
+                      size="small"
+                      aria-label={feed.enabled ? "Disable feed" : "Enable feed"}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(feed.id)}
+                      className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950 dark:hover:text-red-400"
+                      aria-label="Delete feed"
+                    >
+                      <RiDeleteBinLine className="size-4" />
+                    </button>
+                  </div>
                 </>
               )}
             </div>
