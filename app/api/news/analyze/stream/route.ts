@@ -80,7 +80,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     // (Google News articles need URL decoding before we can crawl them)
     const { data: articles, error: fetchError } = await supabase
       .from("articles")
-      .select("id, title, link, decoded_url, snippet")
+      .select("id, title, link, decoded_url, snippet, sentiment_manually_overridden")
       .eq("user_id", getSharedUserId())
       .eq("ai_processed", false)
       .eq("url_decoded", true)
@@ -188,24 +188,24 @@ export async function GET(request: NextRequest): Promise<Response> {
               failed++;
             } else {
               const ai = analysisResult.data;
+              const preserveManualSentiment = article.sentiment_manually_overridden === true;
               const { error: updateError } = await retrySupabaseMutation(
                 "stream/analyze-success",
                 async () => {
-                  const r = await supabase
-                    .from("articles")
-                    .update({
-                      summary: ai.summary,
-                      sentiment: ai.sentiment,
-                      categories: ai.categories,
-                      ai_reason: ai.reason,
-                      ai_processed: true,
-                      ai_error: crawlFailed
-                        ? `Crawl gagal: ${crawlError} (dianalisis dari snippet)`
-                        : null,
-                      ai_processed_at: now,
-                      full_content: content,
-                    })
-                    .eq("id", article.id);
+                  const base = {
+                    summary: ai.summary,
+                    categories: ai.categories,
+                    ai_processed: true,
+                    ai_error: crawlFailed
+                      ? `Crawl gagal: ${crawlError} (dianalisis dari snippet)`
+                      : null,
+                    ai_processed_at: now,
+                    full_content: content,
+                  };
+                  const payload = preserveManualSentiment
+                    ? base
+                    : { ...base, sentiment: ai.sentiment, ai_reason: ai.reason };
+                  const r = await supabase.from("articles").update(payload).eq("id", article.id);
                   return { error: r.error };
                 },
               );

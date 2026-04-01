@@ -381,9 +381,6 @@ export async function crawlArticleContent(url: string): Promise<CrawlResult> {
   const baseUrl = getBaseUrl();
   const apiToken = getApiToken();
 
-  console.log(`[debug] Target Crawl4AI URL: ${baseUrl}`);
-  console.log(`[debug] Token loaded: ${apiToken ? `YES (Length: ${apiToken.length})` : "NO (It is undefined/empty!)"}`);
-
   const proxyConfig = buildProxyConfigForCrawler();
   const crawlTimeoutMs = proxyConfig
     ? CRAWL_TIMEOUT_MS_WITH_PROXY

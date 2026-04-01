@@ -71,6 +71,22 @@ export function ArticleFeed({
     return () => clearTimeout(handler);
   }, [search]);
 
+  const handleSentimentUpdated = useCallback((articleId: string, sentiment: Sentiment) => {
+    setArticles((prev) =>
+      prev.map((a) =>
+        a.id === articleId
+          ? {
+              ...a,
+              sentiment,
+              sentimentManuallyOverridden: true,
+              aiError: null,
+              aiReason: null,
+            }
+          : a,
+      ),
+    );
+  }, []);
+
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
@@ -343,7 +359,12 @@ export function ArticleFeed({
       <div className={cx("flex flex-col gap-3 transition-opacity", isLoading && "opacity-60")}>
         {articles.length > 0 ? (
           articles.map((article) => (
-            <ArticleCard key={article.id ?? article.link} article={article} topicMap={topicMap} />
+            <ArticleCard
+              key={article.id ?? article.link}
+              article={article}
+              topicMap={topicMap}
+              onSentimentUpdated={handleSentimentUpdated}
+            />
           ))
         ) : (
           <div className="flex h-32 items-center justify-center rounded-md border border-dashed border-gray-300 dark:border-gray-700">

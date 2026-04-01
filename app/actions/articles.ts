@@ -5,12 +5,16 @@ import { revalidatePath } from "next/cache";
 import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTopics, dashboardArticleSelect, DashboardArticleRow, toDashboardArticle } from "@/lib/services/dashboard";
+import type { ArticleInsert } from "@/lib/types/database";
 import type { Article, Sentiment } from "@/lib/types/news";
 import { validateString, validateUuid } from "@/lib/utils/validateInput";
 import { validateUrl } from "@/lib/utils/validateUrl";
 
 /** Max rows returned in one export (PostgREST single-response limit). */
 const MAX_EXPORT_ROWS = 10_000;
+
+/** Max failed-analysis rows returned for the manual review modal. */
+const MAX_FAILED_ARTICLES_FOR_REVIEW = 500;
 
 export interface FeedQueryParams {
     page: number;
@@ -100,6 +104,53 @@ export async function getFeedArticlesAction(params: FeedQueryParams): Promise<{ 
 }
 
 /**
+ * Failed-analysis articles for the manual review modal (same topic scope as the feed).
+ */
+export async function getFailedArticlesAction(): Promise<{
+    articles: Article[];
+    error?: string;
+}> {
+    try {
+        const supabase = await createClient();
+        const { data: claimsData } = await supabase.auth.getClaims();
+        if (!claimsData?.claims?.sub) {
+            return { articles: [], error: "Unauthorized" };
+        }
+
+        const { activeTopicIds } = await getActiveTopics();
+        if (activeTopicIds.length === 0) {
+            return { articles: [] };
+        }
+
+        const sharedId = getSharedUserId();
+
+        const { data, error } = await supabase
+            .from("articles")
+            .select(dashboardArticleSelect)
+            .eq("user_id", sharedId)
+            .eq("ai_processed", true)
+            .not("ai_error", "is", null)
+            .overlaps("matched_topic_ids", activeTopicIds)
+            .order("published_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false })
+            .limit(MAX_FAILED_ARTICLES_FOR_REVIEW);
+
+        if (error) {
+            console.error("[articles] getFailedArticles:", error.message);
+            return { articles: [], error: error.message };
+        }
+
+        const rows = (data ?? []) as DashboardArticleRow[];
+        return { articles: rows.map(toDashboardArticle) };
+    } catch (err: unknown) {
+        return {
+            articles: [],
+            error: err instanceof Error ? err.message : "Unknown error",
+        };
+    }
+}
+
+/**
  * Fetches all articles matching the current feed filters (up to MAX_EXPORT_ROWS).
  * Used for Excel export instead of paginated client state so date/month presets include
  * every matching row, not only the current page.
@@ -179,6 +230,84 @@ export async function getArticlesForExportAction(
     }
 }
 
+function validateSentiment(value: unknown): { valid: true; value: Sentiment } | { valid: false; error: string } {
+    if (typeof value !== "string") {
+        return { valid: false, error: "Sentiment must be a string" };
+    }
+    const v = value.trim().toLowerCase();
+    if (v === "positive" || v === "neutral" || v === "negative") {
+        return { valid: true, value: v };
+    }
+    return { valid: false, error: "Invalid sentiment" };
+}
+
+export interface UpdateArticleSentimentResult {
+    success: boolean;
+    error?: string;
+}
+
+/**
+ * Sets an article's sentiment for the shared workspace and locks it against LLM overwrites.
+ */
+export async function updateArticleSentimentAction(
+    articleId: string,
+    sentiment: Sentiment,
+): Promise<UpdateArticleSentimentResult> {
+    try {
+        const supabase = await createClient();
+        const { data: claimsData } = await supabase.auth.getClaims();
+        if (!claimsData?.claims?.sub) {
+            return { success: false, error: "Unauthorized" };
+        }
+
+        const idVal = validateUuid(articleId, "article id");
+        if (!idVal.valid) {
+            return { success: false, error: idVal.error };
+        }
+
+        const sVal = validateSentiment(sentiment);
+        if (!sVal.valid) {
+            return { success: false, error: sVal.error };
+        }
+
+        const sharedId = getSharedUserId();
+
+        const { data: updated, error: updateErr } = await supabase
+            .from("articles")
+            .update({
+                sentiment: sVal.value,
+                sentiment_manually_overridden: true,
+                ai_error: null,
+                ai_reason: null,
+            })
+            .eq("id", idVal.value!)
+            .eq("user_id", sharedId)
+            .select("id")
+            .maybeSingle();
+
+        if (updateErr) {
+            console.error("[articles] updateArticleSentiment:", updateErr.message);
+            return { success: false, error: "Failed to update sentiment" };
+        }
+
+        if (!updated) {
+            return {
+                success: false,
+                error: "Artikel tidak ditemukan",
+            };
+        }
+
+        revalidatePath("/dashboard");
+        return { success: true };
+    } catch (err) {
+        console.error("[articles] updateArticleSentiment:", err);
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Failed to update sentiment",
+        };
+    }
+}
+
 export async function getArticleFilterOptionsAction(): Promise<{ categories: string[]; sources: string[]; error?: string }> {
     try {
         const supabase = await createClient();
@@ -229,10 +358,9 @@ export async function getArticleFilterOptionsAction(): Promise<{ categories: str
 export interface AddCustomArticleInput {
     title: string;
     link: string;
-    snippet?: string;
-    sourceName?: string;
-    publishedAt?: string | null;
-    topicIds: string[];
+    sourceName: string;
+    /** When set, stored with sentiment_manually_overridden so Groq preserves it on first analyze. */
+    sentiment?: Sentiment;
 }
 
 export interface AddCustomArticleResult {
@@ -268,68 +396,30 @@ export async function addCustomArticleAction(
         }
         const normalizedLink = urlValidation.normalizedUrl;
 
-        let snippet: string | null = null;
-        if (input.snippet !== undefined && input.snippet !== null && input.snippet.trim() !== "") {
-            const sn = validateString(input.snippet, "snippet", {
-                minLength: 1,
-                maxLength: 1000,
-            });
-            if (!sn.valid) {
-                return { success: false, error: sn.error };
-            }
-            snippet = sn.value!;
+        const sourceNameValidation = validateString(input.sourceName, "Nama media", {
+            minLength: 1,
+            maxLength: 200,
+        });
+        if (!sourceNameValidation.valid) {
+            return { success: false, error: sourceNameValidation.error };
         }
+        const sourceName = sourceNameValidation.value!;
 
-        let sourceName: string | null = null;
-        if (input.sourceName !== undefined && input.sourceName !== null && input.sourceName.trim() !== "") {
-            const sn = validateString(input.sourceName, "source name", {
-                minLength: 1,
-                maxLength: 200,
-            });
-            if (!sn.valid) {
-                return { success: false, error: sn.error };
-            }
-            sourceName = sn.value!;
-        }
-
-        let publishedAt: string | null = null;
-        if (input.publishedAt !== undefined && input.publishedAt !== null && input.publishedAt.trim() !== "") {
-            const d = new Date(input.publishedAt);
-            if (Number.isNaN(d.getTime())) {
-                return { success: false, error: "Invalid published date" };
-            }
-            publishedAt = d.toISOString();
-        }
-
-        if (!Array.isArray(input.topicIds) || input.topicIds.length === 0) {
-            return { success: false, error: "Select at least one topic" };
-        }
-
-        const uniqueTopicIds = [...new Set(input.topicIds)];
-        const validatedTopicIds: string[] = [];
-        for (const id of uniqueTopicIds) {
-            const idVal = validateUuid(id, "topic id");
-            if (!idVal.valid) {
-                return { success: false, error: idVal.error };
-            }
-            validatedTopicIds.push(idVal.value!);
-        }
-
-        const { data: enabledTopics, error: topicsErr } = await supabase
+        const { data: enabledTopicRows, error: topicsErr } = await supabase
             .from("topics")
             .select("id")
-            .eq("enabled", true)
-            .in("id", validatedTopicIds);
+            .eq("enabled", true);
 
         if (topicsErr) {
             console.error("[articles] addCustomArticle topics:", topicsErr.message);
-            return { success: false, error: "Failed to validate topics" };
+            return { success: false, error: "Failed to load topics" };
         }
 
-        if (!enabledTopics || enabledTopics.length !== validatedTopicIds.length) {
+        const matchedTopicIds = (enabledTopicRows ?? []).map((row) => row.id);
+        if (matchedTopicIds.length === 0) {
             return {
                 success: false,
-                error: "One or more topics are invalid or disabled",
+                error: "Aktifkan setidaknya satu topik di pengaturan agar artikel bisa muncul di feed.",
             };
         }
 
@@ -342,21 +432,35 @@ export async function addCustomArticleAction(
 
         const sharedId = getSharedUserId();
 
-        const { error: insertErr } = await supabase.from("articles").insert({
+        let presetSentiment: Sentiment | undefined;
+        if (input.sentiment !== undefined) {
+            const sVal = validateSentiment(input.sentiment);
+            if (!sVal.valid) {
+                return { success: false, error: sVal.error };
+            }
+            presetSentiment = sVal.value;
+        }
+
+        const insertRow: ArticleInsert = {
             user_id: sharedId,
             title: titleValidation.value!,
             link: normalizedLink,
-            snippet,
+            snippet: null,
             photo_url: null,
             source_name: sourceName,
             source_url: sourceUrl,
-            published_at: publishedAt,
+            published_at: null,
             source_type: "custom",
-            matched_topic_ids: validatedTopicIds,
+            matched_topic_ids: matchedTopicIds,
             ai_processed: false,
             url_decoded: false,
             decode_failed: false,
-        });
+            ...(presetSentiment !== undefined
+                ? { sentiment: presetSentiment, sentiment_manually_overridden: true }
+                : {}),
+        };
+
+        const { error: insertErr } = await supabase.from("articles").insert(insertRow);
 
         if (insertErr) {
             if (insertErr.code === "23505") {

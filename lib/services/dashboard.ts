@@ -13,7 +13,7 @@ import type {
 } from "@/lib/types/dashboard";
 
 export const dashboardArticleSelect =
-  "id,title,link,decoded_url,snippet,photo_url,source_name,source_url,published_at,source_type,summary,sentiment,categories,ai_processed,ai_error,ai_processed_at,matched_topic_ids,url_decoded,decode_failed,ai_reason,created_at,updated_at";
+  "id,title,link,decoded_url,snippet,photo_url,source_name,source_url,published_at,source_type,summary,sentiment,sentiment_manually_overridden,categories,ai_processed,ai_error,ai_processed_at,matched_topic_ids,url_decoded,decode_failed,ai_reason,created_at,updated_at";
 
 export type DashboardArticleRow = Pick<
   ArticleRow,
@@ -29,6 +29,7 @@ export type DashboardArticleRow = Pick<
   | "source_type"
   | "summary"
   | "sentiment"
+  | "sentiment_manually_overridden"
   | "categories"
   | "ai_processed"
   | "ai_error"
@@ -55,6 +56,7 @@ export function toDashboardArticle(row: DashboardArticleRow): Article {
     sourceType: row.source_type,
     summary: row.summary,
     sentiment: row.sentiment,
+    sentimentManuallyOverridden: row.sentiment_manually_overridden,
     categories: row.categories,
     aiProcessed: row.ai_processed,
     aiError: row.ai_error,
@@ -96,6 +98,25 @@ export const getActiveTopics = cache(async () => {
   return { topicMap, activeTopicIds, availableTopics };
 });
 
+/** PostgREST default max rows per request; paginate past this in getAggregationsRawData. */
+const AGGREGATION_PAGE_SIZE = 1000;
+
+const aggregationSelect =
+  "id, published_at, sentiment, source_name, categories, ai_processed, ai_error, url_decoded, decode_failed";
+
+type DashboardAggregationRow = Pick<
+  ArticleRow,
+  | "id"
+  | "published_at"
+  | "sentiment"
+  | "source_name"
+  | "categories"
+  | "ai_processed"
+  | "ai_error"
+  | "url_decoded"
+  | "decode_failed"
+>;
+
 export const getAggregationsRawData = cache(async (period: DashboardPeriod) => {
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
@@ -107,22 +128,36 @@ export const getAggregationsRawData = cache(async (period: DashboardPeriod) => {
 
   const cutoffDate = getPeriodCutoffDate(period);
 
-  let query = supabase
-    .from("articles")
-    .select("id, published_at, sentiment, source_name, categories, ai_processed, ai_error, url_decoded, decode_failed")
-    .overlaps("matched_topic_ids", activeTopicIds);
+  const all: DashboardAggregationRow[] = [];
+  let offset = 0;
 
-  if (cutoffDate) {
-    query = query.gte("published_at", cutoffDate.toISOString());
+  for (;;) {
+    let query = supabase
+      .from("articles")
+      .select(aggregationSelect)
+      .overlaps("matched_topic_ids", activeTopicIds);
+
+    if (cutoffDate) {
+      query = query.gte("published_at", cutoffDate.toISOString());
+    }
+
+    const { data, error } = await query.range(offset, offset + AGGREGATION_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error("Error fetching aggregations data:", error);
+      return [];
+    }
+
+    const page = (data ?? []) as DashboardAggregationRow[];
+    all.push(...page);
+
+    if (page.length < AGGREGATION_PAGE_SIZE) {
+      break;
+    }
+    offset += AGGREGATION_PAGE_SIZE;
   }
 
-  const { data, error } = await query;
-  if (error) {
-    console.error("Error fetching aggregations data:", error);
-    return [];
-  }
-
-  return data ?? [];
+  return all;
 });
 
 export const getDashboardKPIs = cache(async (period: DashboardPeriod): Promise<KPIData> => {

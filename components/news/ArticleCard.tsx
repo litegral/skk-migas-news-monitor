@@ -2,12 +2,28 @@
 
 import Image from "next/image";
 import { formatDistanceToNow } from "date-fns";
-import { RiExternalLinkLine, RiHashtag, RiInformationLine } from "@remixicon/react";
+import { useTransition } from "react";
+import {
+  RiAlertLine,
+  RiCheckLine,
+  RiExternalLinkLine,
+  RiHashtag,
+  RiInformationLine,
+  RiMore2Fill,
+} from "@remixicon/react";
 
-import type { Article } from "@/lib/types/news";
+import type { Article, Sentiment } from "@/lib/types/news";
+import { updateArticleSentimentAction } from "@/app/actions/articles";
 import { Card } from "@/components/ui/Card";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/Tooltip";
 import { Badge } from "@/components/ui/Badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/DropdownMenu";
 import { SentimentBadge } from "./SentimentBadge";
 import { CategoryBadge } from "./CategoryBadge";
 import { cx } from "@/lib/utils";
@@ -16,9 +32,16 @@ interface ArticleCardProps {
   article: Article;
   /** Map of topic ID → topic name for resolving matchedTopicIds */
   topicMap?: Record<string, string>;
+  /** Called after the user successfully updates sentiment (for parent list state). */
+  onSentimentUpdated?: (
+    articleId: string,
+    sentiment: Sentiment,
+  ) => void;
 }
 
-export function ArticleCard({ article, topicMap }: Readonly<ArticleCardProps>) {
+export function ArticleCard({ article, topicMap, onSentimentUpdated }: Readonly<ArticleCardProps>) {
+  const [isSentimentPending, startSentimentTransition] = useTransition();
+
   const publishedDate = article.publishedAt
     ? formatDistanceToNow(new Date(article.publishedAt), { addSuffix: true })
     : null;
@@ -27,6 +50,17 @@ export function ArticleCard({ article, topicMap }: Readonly<ArticleCardProps>) {
   const topicNames = article.matchedTopicIds
     ?.map((id) => topicMap?.[id])
     .filter((name): name is string => Boolean(name)) ?? [];
+
+  function handleSentimentChange(next: Sentiment) {
+    const articleId = article.id;
+    if (!articleId) return;
+    startSentimentTransition(async () => {
+      const res = await updateArticleSentimentAction(articleId, next);
+      if (res.success) {
+        onSentimentUpdated?.(articleId, next);
+      }
+    });
+  }
 
   return (
     <Card className="flex flex-col gap-4 p-4 sm:flex-row">
@@ -87,6 +121,22 @@ export function ArticleCard({ article, topicMap }: Readonly<ArticleCardProps>) {
           {article.summary || article.snippet || "Tidak ada deskripsi tersedia."}
         </p>
 
+        {article.aiError && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <p className="flex items-start gap-1.5 text-xs text-amber-800 dark:text-amber-200/90">
+                <RiAlertLine className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                <span className="line-clamp-2">
+                  Analisis gagal: {article.aiError.length > 160 ? `${article.aiError.slice(0, 160)}…` : article.aiError}
+                </span>
+              </p>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-md">
+              {article.aiError}
+            </TooltipContent>
+          </Tooltip>
+        )}
+
         {/* Matched topics */}
         {topicNames.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -112,7 +162,6 @@ export function ArticleCard({ article, topicMap }: Readonly<ArticleCardProps>) {
 
         {/* Sentiment and category badges */}
         <div className="flex flex-wrap items-center gap-2">
-          <SentimentBadge sentiment={article.sentiment} />
           {article.aiReason && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -128,6 +177,70 @@ export function ArticleCard({ article, topicMap }: Readonly<ArticleCardProps>) {
                 {article.aiReason}
               </TooltipContent>
             </Tooltip>
+          )}
+          <SentimentBadge sentiment={article.sentiment} />
+          {article.id && (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={isSentimentPending}
+                      className={cx(
+                        "inline-flex size-7 shrink-0 items-center justify-center rounded-md text-gray-400",
+                        "transition-colors hover:bg-gray-100 hover:text-gray-700",
+                        "dark:hover:bg-gray-800 dark:hover:text-gray-200",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
+                        "dark:focus-visible:ring-offset-gray-950",
+                        isSentimentPending && "cursor-wait opacity-60",
+                        article.sentimentManuallyOverridden &&
+                          "text-blue-600 dark:text-blue-400",
+                      )}
+                      aria-label="Ubah sentimen"
+                    >
+                      <RiMore2Fill className="size-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {!article.aiProcessed
+                    ? "Pilih sentimen — akan dipertahankan saat analisis AI"
+                    : article.sentimentManuallyOverridden
+                      ? "Sentimen disesuaikan manual — klik untuk mengubah"
+                      : "Ubah sentimen"}
+                </TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="start" className="min-w-[10rem]">
+                <DropdownMenuLabel className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                  Sentimen
+                </DropdownMenuLabel>
+                {(
+                  [
+                    { value: "positive" as const, label: "Positif" },
+                    { value: "neutral" as const, label: "Netral" },
+                    { value: "negative" as const, label: "Negatif" },
+                  ] as const
+                ).map(({ value, label }) => {
+                  const selected = article.sentiment === value;
+                  return (
+                    <DropdownMenuItem
+                      key={value}
+                      disabled={isSentimentPending}
+                      className="gap-2"
+                      onSelect={() => {
+                        handleSentimentChange(value);
+                      }}
+                    >
+                      <span className="flex w-4 items-center justify-center">
+                        {selected && <RiCheckLine className="size-4 text-blue-600 dark:text-blue-400" />}
+                      </span>
+                      {label}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           {article.categories?.slice(0, 3).map((category) => (
             <CategoryBadge key={category} category={category} />

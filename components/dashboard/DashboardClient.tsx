@@ -6,7 +6,6 @@
  */
 
 import React, { useTransition } from "react";
-import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   RiSettings3Line,
@@ -16,6 +15,7 @@ import {
   RiLoader4Line
 } from "@remixicon/react";
 
+import type { TopicRow } from "@/lib/types/database";
 import type { Article } from "@/lib/types/news";
 import type { DashboardPeriod } from "@/lib/types/dashboard";
 import { PERIOD_OPTIONS } from "@/lib/types/dashboard";
@@ -47,15 +47,19 @@ import { cx } from "@/lib/utils";
 
 // Dashboard components
 import { WidgetGrid } from "@/components/dashboard/WidgetGrid";
-import { SyncButton } from "@/components/dashboard/SyncButton";
 import { SyncStatusIndicator } from "@/components/dashboard/SyncStatusIndicator";
+import { FailedArticlesReviewModal } from "@/components/dashboard/FailedArticlesReviewModal";
+import { AddArticleModal } from "@/components/news/AddArticleModal";
 import { ArticleFeed } from "@/components/news/ArticleFeed";
+import { Badge } from "@/components/ui/Badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 
 interface DashboardClientProps {
   widgets: Record<string, React.ReactNode>;
   period: DashboardPeriod;
   topicMap: Record<string, string>;
   availableTopics: string[];
+  topics: TopicRow[];
   failedCount: number;
   pendingCount: number;
   decodePendingCount: number;
@@ -68,13 +72,16 @@ export function DashboardClient({
   period,
   topicMap,
   availableTopics,
+  topics,
   failedCount,
   pendingCount,
   decodePendingCount,
   initialArticles,
-  totalArticles
+  totalArticles,
 }: Readonly<DashboardClientProps>) {
   const router = useRouter();
+  const [addArticleOpen, setAddArticleOpen] = React.useState(false);
+  const [failedReviewOpen, setFailedReviewOpen] = React.useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
@@ -147,16 +154,37 @@ export function DashboardClient({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Button asChild variant="secondary">
-            <Link href="/settings#custom-article">Tambah artikel</Link>
-          </Button>
-          <SyncButton
+          {failedCount > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => setFailedReviewOpen(true)}
+                  className={cx(
+                    "inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium",
+                    "text-amber-900 transition-colors hover:bg-amber-100",
+                    "dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100 dark:hover:bg-amber-500/20",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2",
+                    "dark:focus-visible:ring-offset-gray-950",
+                  )}
+                >
+                  <span>Tertunda</span>
+                  <Badge variant="warning" className="tabular-nums">
+                    {failedCount}
+                  </Badge>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs">
+                Analisis gagal — klik untuk meninjau dan mengatur sentimen manual
+              </TooltipContent>
+            </Tooltip>
+          )}
+          <SyncStatusIndicator
             failedCount={failedCount}
             pendingCount={pendingCount}
             decodePendingCount={decodePendingCount}
             totalArticles={totalArticles}
           />
-          <SyncStatusIndicator />
         </div>
       </div>
 
@@ -239,14 +267,35 @@ export function DashboardClient({
           ═══════════════════════════════════════════════════════════════════════ */}
       <section className="mt-10">
         {/* Section header */}
-        <div className="mb-4">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50">
-            Artikel Terbaru
-          </h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Berita terbaru dari semua sumber
-          </p>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50">
+              Artikel Terbaru
+            </h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Berita terbaru dari semua sumber
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            className="shrink-0 self-start"
+            onClick={() => setAddArticleOpen(true)}
+          >
+            Tambah artikel
+          </Button>
         </div>
+
+        <AddArticleModal
+          topics={topics}
+          open={addArticleOpen}
+          onOpenChange={setAddArticleOpen}
+        />
+
+        <FailedArticlesReviewModal
+          open={failedReviewOpen}
+          onOpenChange={setFailedReviewOpen}
+        />
 
         {/* Article Feed with its own filters */}
         <Card>

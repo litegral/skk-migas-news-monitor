@@ -100,6 +100,8 @@ export interface Database {
           source_type: "googlenews" | "rss" | "custom" | "rapidapi";
           summary: string | null;
           sentiment: "positive" | "negative" | "neutral" | null;
+          /** When true, Groq analyze success must not overwrite sentiment or ai_reason. */
+          sentiment_manually_overridden: boolean;
           categories: string[] | null;
           ai_processed: boolean;
           /** Error message if AI analysis failed. NULL indicates success. */
@@ -133,6 +135,7 @@ export interface Database {
           source_type: "googlenews" | "rss" | "custom" | "rapidapi";
           summary?: string | null;
           sentiment?: "positive" | "negative" | "neutral" | null;
+          sentiment_manually_overridden?: boolean;
           categories?: string[] | null;
           ai_processed?: boolean;
           ai_error?: string | null;
@@ -159,6 +162,7 @@ export interface Database {
           source_type?: "googlenews" | "rss" | "custom" | "rapidapi";
           summary?: string | null;
           sentiment?: "positive" | "negative" | "neutral" | null;
+          sentiment_manually_overridden?: boolean;
           categories?: string[] | null;
           ai_processed?: boolean;
           ai_error?: string | null;

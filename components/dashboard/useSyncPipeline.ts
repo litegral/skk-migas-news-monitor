@@ -1,30 +1,15 @@
 "use client";
 
 /**
- * SyncButton — unified button that replaces FetchNewsButton + AnalyzeButton.
- *
- * Smart pipeline logic:
- * - If there are failed articles → reset failed → decode → analyze
- * - If there are pending analysis/decode-pending articles → decode → analyze (skip fetch)
- * - If nothing pending → fetch → decode → analyze (full pipeline)
- *
- * 5-minute cooldown applies only to the fetch phase.
- * Analysis-only runs are always allowed.
+ * Shared pipeline logic: reset failed → decode → analyze, or fetch with cooldown.
+ * Used by SyncStatusIndicator (primary action inside the status popover).
  */
 
-import React from "react";
-import {
-  RiRefreshLine,
-  RiSparklingLine,
-  RiLoader4Line,
-  RiCheckLine,
-  RiErrorWarningLine,
-} from "@remixicon/react";
+import * as React from "react";
 
-import { Button } from "@/components/ui/Button";
+import { revalidateDashboardAction } from "@/app/actions/dashboard";
 import { useAnalysis } from "@/contexts/AnalysisContext";
 import { useAutoFetch } from "@/contexts/AutoFetchContext";
-import { revalidateDashboardAction } from "@/app/actions/dashboard";
 
 /** Cooldown duration: 5 minutes in milliseconds */
 const FETCH_COOLDOWN_MS = 5 * 60 * 1000;
@@ -32,12 +17,19 @@ const FETCH_COOLDOWN_MS = 5 * 60 * 1000;
 /** localStorage key for manual button cooldown */
 const COOLDOWN_KEY = "skkmigas_lastNewsFetchTime";
 
-export interface SyncButtonProps {
+export interface SyncPipelineCounts {
   failedCount: number;
   pendingCount: number;
   decodePendingCount: number;
   totalArticles: number;
 }
+
+export type SyncPipelineIconKind =
+  | "loader"
+  | "check"
+  | "error"
+  | "sparkle"
+  | "refresh";
 
 /**
  * Format remaining cooldown time as human-readable string.
@@ -55,9 +47,6 @@ function formatRemainingTime(ms: number): string {
   return `${minutes}m ${remainingSeconds}d`;
 }
 
-/**
- * Check if cooldown is active and return remaining time.
- */
 function getCooldownRemaining(): number {
   if (typeof window === "undefined") return 0;
 
@@ -73,20 +62,17 @@ function getCooldownRemaining(): number {
   return remaining > 0 ? remaining : 0;
 }
 
-/**
- * Save current timestamp to localStorage for cooldown tracking.
- */
 function saveCooldownTimestamp(): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(COOLDOWN_KEY, Date.now().toString());
 }
 
-export function SyncButton({
+export function useSyncPipeline({
   failedCount = 0,
   pendingCount = 0,
   decodePendingCount = 0,
-  totalArticles = 0
-}: Readonly<SyncButtonProps>) {
+  totalArticles = 0,
+}: Readonly<SyncPipelineCounts>) {
   const {
     startProcess,
     isProcessing,
@@ -109,7 +95,6 @@ export function SyncButton({
   const [cooldownRemaining, setCooldownRemaining] = React.useState<number>(0);
   const [manualFetchTriggered, setManualFetchTriggered] = React.useState(false);
 
-  // Check cooldown on mount and update every second
   React.useEffect(() => {
     const checkCooldown = () => {
       setCooldownRemaining(getCooldownRemaining());
@@ -119,10 +104,8 @@ export function SyncButton({
     return () => clearInterval(interval);
   }, []);
 
-  // Reset manual trigger flag after fetch completes and revalidate
   React.useEffect(() => {
     if (manualFetchTriggered && (autoFetchStatus === "success" || autoFetchStatus === "error")) {
-      // Fetch is done, trigger server action to revalidate
       revalidateDashboardAction();
 
       const timeout = setTimeout(() => {
@@ -131,18 +114,6 @@ export function SyncButton({
       return () => clearTimeout(timeout);
     }
   }, [manualFetchTriggered, autoFetchStatus]);
-
-  // Revalidate when processing finishes
-  React.useEffect(() => {
-    if (!isProcessing && !isResetting && !manualFetchTriggered && autoFetchStatus !== "fetching" && autoFetchStatus !== "decoding" && autoFetchStatus !== "analyzing") {
-      // Only if we just finished processing something
-      // we can't tell easily when it transitions from true to false unless we track previous state,
-      // but typically AnalysisContext updates its state so we'll rely on calling revalidateDashboardAction
-      // from within the contexts or doing it here when transition to idle happens.
-      // Actually, AnalysisContext does not currently trigger revalidation.
-      // We'll write a small prev value logic here.
-    }
-  }, [isProcessing, isResetting]);
 
   const prevProcessing = React.useRef(false);
   React.useEffect(() => {
@@ -156,13 +127,13 @@ export function SyncButton({
   const hasPending = pendingCount > 0;
   const hasDecodePending = decodePendingCount > 0;
   const needsAnalysis = hasFailures || hasPending || hasDecodePending;
-  const isFetchActive = autoFetchStatus === "fetching" || autoFetchStatus === "decoding" || autoFetchStatus === "analyzing";
+  const isFetchActive =
+    autoFetchStatus === "fetching" ||
+    autoFetchStatus === "decoding" ||
+    autoFetchStatus === "analyzing";
   const isCooldownActive = cooldownRemaining > 0;
   const isBusy = isProcessing || isResetting || isFetchActive;
 
-  /**
-   * Smart pipeline: determine what to do and run it.
-   */
   async function handleSync() {
     if (isBusy) return;
 
@@ -178,12 +149,6 @@ export function SyncButton({
           await revalidateDashboardAction();
         }
 
-        // We can just rely on the server action revalidation to get new stats,
-        // but for immediate start we use the current UI pending counts.
-        // Wait, resetting makes them pending again. We should wait for revalidation.
-
-        // Let's just trigger startProcess with whatever we think is pending now.
-        // If we just reset, failedCount becomes pending.
         const effectiveDecodePending = decodePendingCount;
         const effectivePending = hasFailures ? pendingCount + failedCount : pendingCount;
 
@@ -256,21 +221,15 @@ export function SyncButton({
       if (warnings.length > 0) return { text: `${resultText}. ${warnings.length} peringatan`, type: "warning" };
       return { text: resultText, type: inserted > 0 ? "success" : "info" };
     }
-    if (hasFailures) return { text: `${failedCount} gagal - Klik untuk coba lagi`, type: "warning" };
-    if (hasDecodePending && hasPending) return { text: `${decodePendingCount} proses URL, ${pendingCount} siap analisis`, type: "info" };
+    if (hasFailures && !hasDecodePending && !hasPending) return null;
+    if (hasDecodePending && hasPending) {
+      return { text: `${decodePendingCount} proses URL, ${pendingCount} siap analisis`, type: "info" };
+    }
     if (hasDecodePending) return { text: `${decodePendingCount} perlu proses URL dulu`, type: "info" };
     if (hasPending) return { text: `${pendingCount} siap dianalisis`, type: "info" };
     if (isCooldownActive) return { text: `Jeda aktif. Coba lagi dalam ${formatRemainingTime(cooldownRemaining)}.`, type: "warning" };
     if (totalArticles === 0) return { text: "Belum ada artikel", type: "info" };
     return { text: "Semua artikel teranalisis", type: "success" };
-  }
-
-  function getIcon() {
-    if (isBusy || isResetting) return <RiLoader4Line className="size-4 animate-spin" />;
-    if (manualFetchTriggered && autoFetchStatus === "success") return <RiCheckLine className="size-4" />;
-    if (manualFetchTriggered && autoFetchStatus === "error") return <RiErrorWarningLine className="size-4" />;
-    if (needsAnalysis) return <RiSparklingLine className="size-4" />;
-    return <RiRefreshLine className="size-4" />;
   }
 
   function getVariant(): "primary" | "secondary" | "destructive" {
@@ -282,31 +241,24 @@ export function SyncButton({
   const isDisabled = isBusy || (!needsAnalysis && isCooldownActive);
   const subtext = getSubtext();
 
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <Button
-        variant={getVariant()}
-        onClick={handleSync}
-        disabled={isDisabled}
-        className="gap-2"
-      >
-        {getIcon()}
-        {getButtonText()}
-      </Button>
-      {subtext && (
-        <p
-          className={`max-w-[220px] text-right text-xs leading-tight ${subtext.type === "error"
-              ? "text-red-500 dark:text-red-400"
-              : subtext.type === "warning"
-                ? "text-amber-600 dark:text-amber-400"
-                : subtext.type === "success"
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-gray-500 dark:text-gray-400"
-            }`}
-        >
-          {subtext.text}
-        </p>
-      )}
-    </div>
-  );
+  function getIconKind(): SyncPipelineIconKind {
+    if (isBusy || isResetting) return "loader";
+    if (manualFetchTriggered && autoFetchStatus === "success") return "check";
+    if (manualFetchTriggered && autoFetchStatus === "error") return "error";
+    if (needsAnalysis) return "sparkle";
+    return "refresh";
+  }
+
+  return {
+    handleSync,
+    getButtonText,
+    getSubtext,
+    getVariant,
+    getIconKind,
+    isDisabled,
+    isBusy,
+    isResetting,
+    needsAnalysis,
+    subtext,
+  };
 }

@@ -32,9 +32,14 @@ export default async function DashboardPage(
   // Fetch initial articles for the feed (page 1)
   const { articles: initialArticles, total: totalArticles } = await getPaginatedArticles(1, 10);
 
-  // We need pendingCount for the SyncButton logic. 
+  // Pending/decode/failed counts for SyncStatusIndicator pipeline + Tertunda badge. 
   // It's fetched lightly. We can just do a very quick count query.
   const supabase = await createClient();
+  const { data: topicsData } = await supabase
+    .from("topics")
+    .select("*")
+    .order("created_at", { ascending: false });
+
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = claimsData?.claims?.sub;
 
@@ -79,6 +84,7 @@ export default async function DashboardPage(
       period={period}
       topicMap={topicMap}
       availableTopics={availableTopics}
+      topics={topicsData ?? []}
       failedCount={failedCount}
       pendingCount={pendingCount}
       decodePendingCount={decodePendingCount}

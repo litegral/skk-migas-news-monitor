@@ -378,7 +378,7 @@ export async function analyzeUnprocessedArticles(
   //    Filter out decode-failed articles — they can't be crawled.
   const { data: articles, error: aErr } = await supabase
     .from("articles")
-    .select("id, title, link, decoded_url, snippet")
+    .select("id, title, link, decoded_url, snippet, sentiment_manually_overridden")
     .eq("user_id", userId)
     .eq("ai_processed", false)
     .eq("url_decoded", true)
@@ -454,24 +454,24 @@ export async function analyzeUnprocessedArticles(
       }
 
       const ai = analysisResult.data;
+      const preserveManualSentiment = article.sentiment_manually_overridden === true;
       const { error: uErr } = await retrySupabaseMutation(
         "news/analyze-success",
         async () => {
-          const r = await supabase
-            .from("articles")
-            .update({
-              summary: ai.summary,
-              sentiment: ai.sentiment,
-              categories: ai.categories,
-              ai_reason: ai.reason,
-              ai_processed: true,
-              ai_error: crawlFailed
-                ? `Crawl gagal: ${crawlError} (dianalisis dari snippet)`
-                : null,
-              ai_processed_at: now,
-              full_content: content,
-            })
-            .eq("id", article.id);
+          const base = {
+            summary: ai.summary,
+            categories: ai.categories,
+            ai_processed: true,
+            ai_error: crawlFailed
+              ? `Crawl gagal: ${crawlError} (dianalisis dari snippet)`
+              : null,
+            ai_processed_at: now,
+            full_content: content,
+          };
+          const payload = preserveManualSentiment
+            ? base
+            : { ...base, sentiment: ai.sentiment, ai_reason: ai.reason };
+          const r = await supabase.from("articles").update(payload).eq("id", article.id);
           return { error: r.error };
         },
       );

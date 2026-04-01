@@ -1,13 +1,11 @@
 "use client";
 
 /**
- * SyncStatusIndicator — unified status dot with popover.
+ * SyncStatusIndicator — status dot with popover.
  *
- * Replaces AnalysisProgress + AutoFetchIndicator.
- * Shows a colored dot that reflects the current pipeline state,
- * with inline progress text when active.
- * Clicking opens a popover with detailed status, progress bars,
- * auto-fetch schedule, last results, and a stop button.
+ * The dot reflects pipeline state with optional inline progress.
+ * Clicking opens a popover with the primary Analisis / Ambil & Analisis action,
+ * schedule/last-fetch details, progress bars, and Hentikan when applicable.
  */
 
 import React from "react";
@@ -17,6 +15,8 @@ import {
   RiTimeLine,
   RiCheckLine,
   RiErrorWarningLine,
+  RiLoader4Line,
+  RiSparklingLine,
 } from "@remixicon/react";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
@@ -29,6 +29,10 @@ import {
 import { Button } from "@/components/ui/Button";
 import { useAutoFetch } from "@/contexts/AutoFetchContext";
 import { useAnalysis } from "@/contexts/AnalysisContext";
+import {
+  useSyncPipeline,
+  type SyncPipelineIconKind,
+} from "@/components/dashboard/useSyncPipeline";
 import { cx } from "@/lib/utils";
 
 /**
@@ -56,7 +60,42 @@ function formatTimeUntil(date: Date): string {
  */
 type EffectiveStatus = "idle" | "fetching" | "decoding" | "analyzing" | "success" | "error";
 
-export function SyncStatusIndicator() {
+export interface SyncStatusIndicatorProps {
+  failedCount: number;
+  pendingCount: number;
+  decodePendingCount: number;
+  totalArticles: number;
+}
+
+function PipelineButtonIcon({ kind }: Readonly<{ kind: SyncPipelineIconKind }>) {
+  const cls = "size-4 shrink-0";
+  switch (kind) {
+    case "loader":
+      return <RiLoader4Line className={cx(cls, "animate-spin")} />;
+    case "check":
+      return <RiCheckLine className={cls} />;
+    case "error":
+      return <RiErrorWarningLine className={cls} />;
+    case "sparkle":
+      return <RiSparklingLine className={cls} />;
+    default:
+      return <RiRefreshLine className={cls} />;
+  }
+}
+
+export function SyncStatusIndicator({
+  failedCount,
+  pendingCount,
+  decodePendingCount,
+  totalArticles,
+}: Readonly<SyncStatusIndicatorProps>) {
+  const pipeline = useSyncPipeline({
+    failedCount,
+    pendingCount,
+    decodePendingCount,
+    totalArticles,
+  });
+
   const {
     status: autoFetchStatus,
     lastFetchAt,
@@ -64,7 +103,6 @@ export function SyncStatusIndicator() {
     lastError,
     nextFetchAt,
     decodeProgress: autoFetchDecodeProgress,
-    triggerFetchNow,
   } = useAutoFetch();
 
   const {
@@ -73,7 +111,7 @@ export function SyncStatusIndicator() {
     isAnalyzing: isManualAnalyzing,
     decodeProgress: manualDecodeProgress,
     analyzedCount,
-    failedCount,
+    failedCount: sessionAnalysisFailedCount,
     totalPending,
     stopProcess,
   } = useAnalysis();
@@ -143,7 +181,7 @@ export function SyncStatusIndicator() {
       return `URL ${current}/${activeDecodeProgress.total}`;
     }
     if (isAnalyzing && totalPending > 0) {
-      const current = analyzedCount + failedCount;
+      const current = analyzedCount + sessionAnalysisFailedCount;
       return `Analisis ${current}/${totalPending}`;
     }
     return null;
@@ -199,14 +237,6 @@ export function SyncStatusIndicator() {
     stopProcess();
   }
 
-  /**
-   * Handle manual fetch trigger from popover.
-   */
-  async function handleManualFetch() {
-    setIsOpen(false);
-    await triggerFetchNow();
-  }
-
   const inlineProgress = getInlineProgressText();
 
   return (
@@ -245,8 +275,41 @@ export function SyncStatusIndicator() {
         </button>
       </PopoverTrigger>
 
-      <PopoverContent align="end" className="w-72 p-3">
+      <PopoverContent align="end" className="w-80 p-3">
         <div className="space-y-3">
+          {/* Primary pipeline: analisis / ambil berita */}
+          <div className="flex flex-col gap-1.5">
+            <Button
+              variant={pipeline.getVariant()}
+              onClick={() => {
+                void pipeline.handleSync();
+              }}
+              disabled={pipeline.isDisabled}
+              className="w-full justify-center gap-2"
+            >
+              <PipelineButtonIcon kind={pipeline.getIconKind()} />
+              {pipeline.getButtonText()}
+            </Button>
+            {pipeline.subtext && (
+              <p
+                className={cx(
+                  "text-center text-xs leading-tight",
+                  pipeline.subtext.type === "error"
+                    ? "text-red-500 dark:text-red-400"
+                    : pipeline.subtext.type === "warning"
+                      ? "text-amber-600 dark:text-amber-400"
+                      : pipeline.subtext.type === "success"
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-gray-500 dark:text-gray-400",
+                )}
+              >
+                {pipeline.subtext.text}
+              </p>
+            )}
+          </div>
+
+          <div className="border-t border-gray-200 dark:border-gray-800" />
+
           {/* Header */}
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Status Sinkronisasi</span>
@@ -364,7 +427,7 @@ export function SyncStatusIndicator() {
                   Analisis
                 </span>
                 <span className="font-medium text-gray-900 dark:text-gray-100">
-                  {analyzedCount + failedCount}/{totalPending} artikel
+                  {analyzedCount + sessionAnalysisFailedCount}/{totalPending} artikel
                 </span>
               </div>
               <div className="h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700">
@@ -372,23 +435,23 @@ export function SyncStatusIndicator() {
                   className="h-1.5 rounded-full bg-blue-500 transition-all duration-300"
                   style={{
                     width: `${Math.round(
-                      ((analyzedCount + failedCount) / totalPending) * 100,
+                      ((analyzedCount + sessionAnalysisFailedCount) / totalPending) * 100,
                     )}%`,
                   }}
                 />
               </div>
               {/* Failed count during analysis */}
-              {failedCount > 0 && (
+              {sessionAnalysisFailedCount > 0 && (
                 <p className="text-xs text-amber-600 dark:text-amber-400">
-                  {failedCount} gagal
+                  {sessionAnalysisFailedCount} gagal
                 </p>
               )}
             </div>
           )}
 
-          {/* Action buttons */}
-          <div className="flex gap-2 border-t border-gray-200 pt-2 dark:border-gray-800">
-            {canStop ? (
+          {/* Stop manual pipeline only — fetch/analisis utama ada di tombol atas */}
+          {canStop && (
+            <div className="flex gap-2 border-t border-gray-200 pt-2 dark:border-gray-800">
               <Button
                 variant="secondary"
                 className="w-full gap-2"
@@ -397,20 +460,8 @@ export function SyncStatusIndicator() {
                 <RiCloseLine className="size-4" />
                 Hentikan
               </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                className="w-full gap-2"
-                onClick={handleManualFetch}
-                disabled={isLoading}
-              >
-                <RiRefreshLine
-                  className={cx("size-4", isLoading && "animate-spin")}
-                />
-                {isLoading ? "Sedang berjalan..." : "Ambil Sekarang"}
-              </Button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </PopoverContent>
     </Popover>

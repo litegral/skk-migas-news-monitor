@@ -35,6 +35,8 @@ export interface Article {
   /** AI-generated fields (null until processed). */
   summary: string | null;
   sentiment: Sentiment | null;
+  /** True when a user set sentiment; analyze pipeline must not overwrite sentiment/ai_reason. */
+  sentimentManuallyOverridden?: boolean;
   categories: string[] | null;
   aiProcessed: boolean;
 
