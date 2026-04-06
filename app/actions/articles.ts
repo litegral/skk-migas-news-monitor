@@ -449,7 +449,7 @@ export async function addCustomArticleAction(
             photo_url: null,
             source_name: sourceName,
             source_url: sourceUrl,
-            published_at: null,
+            published_at: new Date().toISOString(),
             source_type: "custom",
             matched_topic_ids: matchedTopicIds,
             ai_processed: false,

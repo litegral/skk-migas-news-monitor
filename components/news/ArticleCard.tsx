@@ -42,8 +42,9 @@ interface ArticleCardProps {
 export function ArticleCard({ article, topicMap, onSentimentUpdated }: Readonly<ArticleCardProps>) {
   const [isSentimentPending, startSentimentTransition] = useTransition();
 
-  const publishedDate = article.publishedAt
-    ? formatDistanceToNow(new Date(article.publishedAt), { addSuffix: true })
+  const dateIso = article.publishedAt ?? article.createdAt;
+  const publishedDate = dateIso
+    ? formatDistanceToNow(new Date(dateIso), { addSuffix: true })
     : null;
 
   // Resolve topic IDs to names

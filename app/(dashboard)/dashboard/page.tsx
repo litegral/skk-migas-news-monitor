@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 
+import { getDashboardPeriodFromCookie } from "@/lib/actions/dashboard-period";
 import type { DashboardPeriod } from "@/lib/types/dashboard";
 import { DEFAULT_PERIOD, PERIOD_OPTIONS } from "@/lib/types/dashboard";
 import { getActiveTopics, getPaginatedArticles } from "@/lib/services/dashboard";
@@ -20,10 +21,15 @@ export default async function DashboardPage(
 ) {
   const searchParams = await props.searchParams;
 
-  // Parse period from searchParams or default
+  // Parse period: URL query > cookie > default
   let period: DashboardPeriod = DEFAULT_PERIOD;
-  if (searchParams?.period && PERIOD_OPTIONS.some(o => o.value === searchParams.period)) {
+  if (searchParams?.period && PERIOD_OPTIONS.some((o) => o.value === searchParams.period)) {
     period = searchParams.period as DashboardPeriod;
+  } else {
+    const fromCookie = await getDashboardPeriodFromCookie();
+    if (fromCookie) {
+      period = fromCookie;
+    }
   }
 
   // Fetch base layout data (topics, active flags, etc.)

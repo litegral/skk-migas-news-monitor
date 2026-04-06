@@ -20,6 +20,7 @@ import type { Article } from "@/lib/types/news";
 import type { DashboardPeriod } from "@/lib/types/dashboard";
 import { PERIOD_OPTIONS } from "@/lib/types/dashboard";
 import type { DashboardLayout } from "@/lib/types/dashboard-layout";
+import { setDashboardPeriod } from "@/lib/actions/dashboard-period";
 import {
   loadDashboardLayout,
   saveDashboardLayout,
@@ -94,12 +95,13 @@ export function DashboardClient({
   // Edit mode state (default: off, resets on page refresh)
   const [isEditMode, setIsEditMode] = React.useState(false);
 
-  // Handle period change via Next.js router
+  // Handle period change via Next.js router + persist cookie
   const handlePeriodChange = (newPeriod: DashboardPeriod) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("period", newPeriod);
 
     startTransition(() => {
+      void setDashboardPeriod(newPeriod);
       router.push(`${pathname}?${params.toString()}`);
     });
   };
