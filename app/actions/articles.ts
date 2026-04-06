@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveTopics, dashboardArticleSelect, DashboardArticleRow, toDashboardArticle } from "@/lib/services/dashboard";
+import { matchTopicIdsForText } from "@/lib/services/rss";
 import type { ArticleInsert } from "@/lib/types/database";
 import type { Article, Sentiment } from "@/lib/types/news";
 import { validateString, validateUuid } from "@/lib/utils/validateInput";
@@ -370,7 +371,7 @@ export interface AddCustomArticleResult {
 
 /**
  * Insert a user-submitted article into the shared workspace. The normal
- * decode → crawl → analyze pipeline picks it up on the next sync/cron run.
+ * decode → scan → analyze pipeline picks it up on the next sync/cron run.
  */
 export async function addCustomArticleAction(
     input: AddCustomArticleInput,
@@ -407,7 +408,7 @@ export async function addCustomArticleAction(
 
         const { data: enabledTopicRows, error: topicsErr } = await supabase
             .from("topics")
-            .select("id")
+            .select("id, name, keywords")
             .eq("enabled", true);
 
         if (topicsErr) {
@@ -415,11 +416,30 @@ export async function addCustomArticleAction(
             return { success: false, error: "Failed to load topics" };
         }
 
-        const matchedTopicIds = (enabledTopicRows ?? []).map((row) => row.id);
-        if (matchedTopicIds.length === 0) {
+        const topicsForMatch = (enabledTopicRows ?? []).map((row) => ({
+            id: row.id,
+            name: row.name,
+            keywords: row.keywords ?? [],
+        }));
+
+        if (topicsForMatch.length === 0) {
             return {
                 success: false,
                 error: "Aktifkan setidaknya satu topik di pengaturan agar artikel bisa muncul di feed.",
+            };
+        }
+
+        const matchedTopicIds = matchTopicIdsForText(
+            titleValidation.value!,
+            null,
+            topicsForMatch,
+        );
+
+        if (matchedTopicIds.length === 0) {
+            return {
+                success: false,
+                error:
+                    "Judul artikel tidak cocok dengan kata kunci topik manapun. Sesuaikan judul atau kata kunci topik di pengaturan (sama seperti filter berita RSS). Setelah scan halaman, topik dapat diselaraskan lagi berdasarkan isi artikel.",
             };
         }
 

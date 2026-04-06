@@ -208,8 +208,93 @@ export interface TopicForFiltering {
 }
 
 /**
+ * Returns topic IDs whose keywords appear in the searchable string (same rules as RSS filtering).
+ */
+export function matchTopicIdsForSearchableText(
+  searchableText: string,
+  topics: TopicForFiltering[],
+): string[] {
+  const topicsWithKeywords = topics.filter((t) => t.keywords.length > 0);
+  if (topicsWithKeywords.length === 0) {
+    return [];
+  }
+
+  const haystack = searchableText.toLowerCase();
+  const matchedTopicIds: string[] = [];
+
+  for (const topic of topicsWithKeywords) {
+    const matched = topic.keywords.some((keyword) =>
+      haystack.includes(keyword.toLowerCase()),
+    );
+    if (matched) {
+      matchedTopicIds.push(topic.id);
+    }
+  }
+
+  return matchedTopicIds;
+}
+
+/**
+ * Match using title + snippet only (manual submit, RSS ingest).
+ */
+export function matchTopicIdsForText(
+  title: string,
+  snippet: string | null,
+  topics: TopicForFiltering[],
+): string[] {
+  return matchTopicIdsForSearchableText([title, snippet ?? ""].join(" "), topics);
+}
+
+/** Max scanned body chars to include in post-scan topic matching (keep strings bounded). */
+export const POST_SCAN_TOPIC_BODY_MAX_CHARS = 12_000;
+
+/**
+ * Recompute topic matches after scanning the page using title + snippet + start of scanned body text.
+ */
+export function matchTopicIdsAfterScan(
+  title: string,
+  snippet: string | null,
+  scannedContent: string | null,
+  topics: TopicForFiltering[],
+): string[] {
+  const excerpt = scannedContent ? scannedContent.slice(0, POST_SCAN_TOPIC_BODY_MAX_CHARS) : "";
+  return matchTopicIdsForSearchableText(
+    [title, snippet ?? "", excerpt].join(" "),
+    topics,
+  );
+}
+
+/**
+ * After-scan replace policy: use recomputed IDs when non-empty; otherwise keep insert-time IDs
+ * so the article does not disappear from all topic feeds.
+ */
+export function resolveMatchedTopicIdsAfterScan(
+  recomputed: string[],
+  previous: string[],
+): string[] {
+  return recomputed.length > 0 ? recomputed : previous;
+}
+
+/**
+ * For `source_type === "custom"` only: recompute `matched_topic_ids` after scan; other sources unchanged.
+ */
+export function resolveCustomArticleMatchedTopicIds(
+  sourceType: string,
+  title: string,
+  snippet: string | null,
+  previousMatched: string[] | null,
+  scannedContent: string | null,
+  topics: TopicForFiltering[],
+): string[] | undefined {
+  if (sourceType !== "custom") return undefined;
+  const previous = previousMatched ?? [];
+  const recomputed = matchTopicIdsAfterScan(title, snippet, scannedContent, topics);
+  return resolveMatchedTopicIdsAfterScan(recomputed, previous);
+}
+
+/**
  * Filter articles to keep only those that match at least one topic keyword.
- * 
+ *
  * Matching logic:
  * - Topics with empty keywords array are skipped
  * - Match if ANY keyword phrase is found in title/snippet (OR logic)
@@ -223,7 +308,6 @@ export function filterArticlesByTopics(
   articles: Article[],
   topics: TopicForFiltering[],
 ): Article[] {
-  // Filter to only topics that have keywords defined
   const topicsWithKeywords = topics.filter((t) => t.keywords.length > 0);
 
   if (topicsWithKeywords.length === 0) {
@@ -234,27 +318,12 @@ export function filterArticlesByTopics(
   const filteredArticles: Article[] = [];
 
   for (const article of articles) {
-    const matchedTopicIds: string[] = [];
-
-    // Combine searchable text (title + snippet)
-    const searchableText = [
+    const matchedTopicIds = matchTopicIdsForText(
       article.title,
-      article.snippet ?? "",
-    ].join(" ").toLowerCase();
+      article.snippet ?? null,
+      topics,
+    );
 
-    // Check each topic
-    for (const topic of topicsWithKeywords) {
-      // OR logic: match if ANY keyword phrase is found (case-insensitive substring)
-      const matched = topic.keywords.some((keyword) => {
-        return searchableText.includes(keyword.toLowerCase());
-      });
-
-      if (matched) {
-        matchedTopicIds.push(topic.id);
-      }
-    }
-
-    // Only include articles that matched at least one topic
     if (matchedTopicIds.length > 0) {
       filteredArticles.push({
         ...article,

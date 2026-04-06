@@ -34,26 +34,7 @@ import {
   type SyncPipelineIconKind,
 } from "@/components/dashboard/useSyncPipeline";
 import { cx } from "@/lib/utils";
-
-/**
- * Format remaining time until a date.
- */
-function formatTimeUntil(date: Date): string {
-  const now = Date.now();
-  const target = date.getTime();
-  const diff = target - now;
-
-  if (diff <= 0) return "Sekarang";
-
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-
-  if (hours > 0) {
-    return `${hours} jam ${remainingMinutes} menit`;
-  }
-  return `${minutes} menit`;
-}
+import { formatTimeUntil } from "@/lib/utils/formatTimeUntil";
 
 /**
  * Effective status combining auto-fetch and manual processing.

@@ -48,6 +48,7 @@ import { cx } from "@/lib/utils";
 
 // Dashboard components
 import { WidgetGrid } from "@/components/dashboard/WidgetGrid";
+import { PendingAnalysisNotice } from "@/components/dashboard/PendingAnalysisNotice";
 import { SyncStatusIndicator } from "@/components/dashboard/SyncStatusIndicator";
 import { FailedArticlesReviewModal } from "@/components/dashboard/FailedArticlesReviewModal";
 import { AddArticleModal } from "@/components/news/AddArticleModal";
@@ -277,6 +278,10 @@ export function DashboardClient({
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
               Berita terbaru dari semua sumber
             </p>
+            <PendingAnalysisNotice
+              pendingCount={pendingCount}
+              decodePendingCount={decodePendingCount}
+            />
           </div>
           <Button
             type="button"

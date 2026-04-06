@@ -20,7 +20,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types/database";
 import type { Article } from "@/lib/types/news";
 import { fetchGoogleNewsArticles } from "@/lib/services/googlenews";
-import { fetchRSSFeedArticles, filterArticlesByTopics } from "@/lib/services/rss";
+import {
+  fetchRSSFeedArticles,
+  filterArticlesByTopics,
+  resolveCustomArticleMatchedTopicIds,
+  type TopicForFiltering,
+} from "@/lib/services/rss";
 import { crawlArticleContent } from "@/lib/services/crawler";
 import { analyzeArticle } from "@/lib/services/llm";
 import { retrySupabaseMutation } from "@/lib/utils/retrySupabase";
@@ -378,7 +383,9 @@ export async function analyzeUnprocessedArticles(
   //    Filter out decode-failed articles — they can't be crawled.
   const { data: articles, error: aErr } = await supabase
     .from("articles")
-    .select("id, title, link, decoded_url, snippet, sentiment_manually_overridden")
+    .select(
+      "id, title, link, decoded_url, snippet, sentiment_manually_overridden, source_type, matched_topic_ids",
+    )
     .eq("user_id", userId)
     .eq("ai_processed", false)
     .eq("url_decoded", true)
@@ -393,6 +400,21 @@ export async function analyzeUnprocessedArticles(
   if (!articles || articles.length === 0) {
     return { analyzed: 0, failed: 0, errors: [] };
   }
+
+  const { data: topicRows, error: topicsErr } = await supabase
+    .from("topics")
+    .select("id, name, keywords")
+    .eq("enabled", true);
+
+  if (topicsErr) {
+    console.error("[news] analyzeUnprocessedArticles topics:", topicsErr.message);
+  }
+
+  const topicsForMatch: TopicForFiltering[] = (topicRows ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    keywords: row.keywords ?? [],
+  }));
 
   let analyzed = 0;
   let failed = 0;
@@ -428,6 +450,15 @@ export async function analyzeUnprocessedArticles(
         console.warn(`[news] LLM analysis failed for "${article.title}": ${errorMsg}`);
         errors.push(`"${article.title.slice(0, 50)}...": ${errorMsg}`);
 
+        const customTopicIds = resolveCustomArticleMatchedTopicIds(
+          article.source_type,
+          article.title,
+          article.snippet,
+          article.matched_topic_ids,
+          content,
+          topicsForMatch,
+        );
+
         const { error: persistErr } = await retrySupabaseMutation(
           "news/analyze-llm-fail",
           async () => {
@@ -440,6 +471,7 @@ export async function analyzeUnprocessedArticles(
                   : errorMsg,
                 ai_processed_at: now,
                 full_content: content,
+                ...(customTopicIds !== undefined ? { matched_topic_ids: customTopicIds } : {}),
               })
               .eq("id", article.id);
             return { error: r.error };
@@ -455,6 +487,15 @@ export async function analyzeUnprocessedArticles(
 
       const ai = analysisResult.data;
       const preserveManualSentiment = article.sentiment_manually_overridden === true;
+      const customTopicIdsSuccess = resolveCustomArticleMatchedTopicIds(
+        article.source_type,
+        article.title,
+        article.snippet,
+        article.matched_topic_ids,
+        content,
+        topicsForMatch,
+      );
+
       const { error: uErr } = await retrySupabaseMutation(
         "news/analyze-success",
         async () => {
@@ -467,6 +508,9 @@ export async function analyzeUnprocessedArticles(
               : null,
             ai_processed_at: now,
             full_content: content,
+            ...(customTopicIdsSuccess !== undefined
+              ? { matched_topic_ids: customTopicIdsSuccess }
+              : {}),
           };
           const payload = preserveManualSentiment
             ? base

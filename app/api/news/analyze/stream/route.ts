@@ -18,6 +18,10 @@ import { createClient } from "@/lib/supabase/server";
 import { crawlArticleContent } from "@/lib/services/crawler";
 import { analyzeArticle } from "@/lib/services/llm";
 import { retrySupabaseMutation } from "@/lib/utils/retrySupabase";
+import {
+  resolveCustomArticleMatchedTopicIds,
+  type TopicForFiltering,
+} from "@/lib/services/rss";
 
 /** Delay between LLM calls to avoid rate limits (ms) */
 const LLM_DELAY_MS = 500;
@@ -80,7 +84,9 @@ export async function GET(request: NextRequest): Promise<Response> {
     // (Google News articles need URL decoding before we can crawl them)
     const { data: articles, error: fetchError } = await supabase
       .from("articles")
-      .select("id, title, link, decoded_url, snippet, sentiment_manually_overridden")
+      .select(
+        "id, title, link, decoded_url, snippet, sentiment_manually_overridden, source_type, matched_topic_ids",
+      )
       .eq("user_id", getSharedUserId())
       .eq("ai_processed", false)
       .eq("url_decoded", true)
@@ -124,6 +130,21 @@ export async function GET(request: NextRequest): Promise<Response> {
 
         console.log(`[api/news/analyze/stream] Starting analysis of ${total} articles for user ${user.id}`);
 
+        const { data: topicRows, error: topicsFetchErr } = await supabase
+          .from("topics")
+          .select("id, name, keywords")
+          .eq("enabled", true);
+
+        if (topicsFetchErr) {
+          console.error("[api/news/analyze/stream] topics:", topicsFetchErr.message);
+        }
+
+        const topicsForMatch: TopicForFiltering[] = (topicRows ?? []).map((row) => ({
+          id: row.id,
+          name: row.name,
+          keywords: row.keywords ?? [],
+        }));
+
         for (let i = 0; i < pendingArticles.length; i++) {
           const article = pendingArticles[i];
 
@@ -161,6 +182,15 @@ export async function GET(request: NextRequest): Promise<Response> {
               const errorMsg = analysisResult.error || "Unknown LLM error";
               console.warn(`[stream] LLM analysis failed for "${article.title}": ${errorMsg}`);
 
+              const customTopicIdsFail = resolveCustomArticleMatchedTopicIds(
+                article.source_type,
+                article.title,
+                article.snippet,
+                article.matched_topic_ids,
+                content,
+                topicsForMatch,
+              );
+
               const { error: persistErr } = await retrySupabaseMutation(
                 "stream/analyze-llm-fail",
                 async () => {
@@ -173,6 +203,9 @@ export async function GET(request: NextRequest): Promise<Response> {
                         : errorMsg,
                       ai_processed_at: now,
                       full_content: content,
+                      ...(customTopicIdsFail !== undefined
+                        ? { matched_topic_ids: customTopicIdsFail }
+                        : {}),
                     })
                     .eq("id", article.id);
                   return { error: r.error };
@@ -189,6 +222,15 @@ export async function GET(request: NextRequest): Promise<Response> {
             } else {
               const ai = analysisResult.data;
               const preserveManualSentiment = article.sentiment_manually_overridden === true;
+              const customTopicIdsOk = resolveCustomArticleMatchedTopicIds(
+                article.source_type,
+                article.title,
+                article.snippet,
+                article.matched_topic_ids,
+                content,
+                topicsForMatch,
+              );
+
               const { error: updateError } = await retrySupabaseMutation(
                 "stream/analyze-success",
                 async () => {
@@ -201,6 +243,9 @@ export async function GET(request: NextRequest): Promise<Response> {
                       : null,
                     ai_processed_at: now,
                     full_content: content,
+                    ...(customTopicIdsOk !== undefined
+                      ? { matched_topic_ids: customTopicIdsOk }
+                      : {}),
                   };
                   const payload = preserveManualSentiment
                     ? base

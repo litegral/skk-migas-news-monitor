@@ -92,8 +92,9 @@ export function AddArticleModal({
         <DialogHeader>
           <DialogTitle>Tambah artikel manual</DialogTitle>
           <DialogDescription>
-            Ringkasan dan kategori diisi oleh AI setelah halaman di-crawl. Topik feed ditetapkan
-            otomatis ke semua topik yang aktif.
+            Ringkasan dan kategori diisi oleh AI setelah halaman di-scan. Topik ditentukan dari kata
+            kunci yang cocok dengan judul; setelah scan, sistem dapat menyelaraskan lagi memakai isi
+            artikel.
           </DialogDescription>
         </DialogHeader>
 
