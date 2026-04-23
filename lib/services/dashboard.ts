@@ -135,6 +135,7 @@ export const getAggregationsRawData = cache(async (period: DashboardPeriod) => {
     let query = supabase
       .from("articles")
       .select(aggregationSelect)
+      .eq("is_hidden", false)
       .overlaps("matched_topic_ids", activeTopicIds);
 
     if (cutoffDate) {
@@ -299,6 +300,7 @@ export const getPaginatedArticles = cache(async (
   const { count } = await supabase
     .from("articles")
     .select("id", { count: 'exact', head: true })
+    .eq("is_hidden", false)
     .overlaps("matched_topic_ids", filterTopics);
 
   const start = (page - 1) * limit;
@@ -308,6 +310,7 @@ export const getPaginatedArticles = cache(async (
   const { data, error } = await supabase
     .from("articles")
     .select(dashboardArticleSelect)
+    .eq("is_hidden", false)
     .overlaps("matched_topic_ids", filterTopics)
     .order("published_at", { ascending: false })
     .range(start, end);

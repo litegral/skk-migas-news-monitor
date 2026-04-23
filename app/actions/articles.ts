@@ -59,6 +59,7 @@ export async function getFeedArticlesAction(params: FeedQueryParams): Promise<{ 
         let query = supabase
             .from("articles")
             .select(dashboardArticleSelect, { count: "exact" })
+            .eq("is_hidden", false)
             .overlaps("matched_topic_ids", filterTopicIds);
 
         if (params.sentiment && params.sentiment !== "all") {
@@ -129,6 +130,7 @@ export async function getFailedArticlesAction(): Promise<{
             .from("articles")
             .select(dashboardArticleSelect)
             .eq("user_id", sharedId)
+            .eq("is_hidden", false)
             .eq("ai_processed", true)
             .not("ai_error", "is", null)
             .overlaps("matched_topic_ids", activeTopicIds)
@@ -182,6 +184,7 @@ export async function getArticlesForExportAction(
         let query = supabase
             .from("articles")
             .select(dashboardArticleSelect)
+            .eq("is_hidden", false)
             .overlaps("matched_topic_ids", filterTopicIds);
 
         if (params.sentiment && params.sentiment !== "all") {
@@ -501,6 +504,43 @@ export async function addCustomArticleAction(
         return {
             success: false,
             error: err instanceof Error ? err.message : "Failed to save article",
+        };
+    }
+}
+
+export async function deleteArticleAction(articleId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        const supabase = await createClient();
+        const { data: claimsData } = await supabase.auth.getClaims();
+        if (!claimsData?.claims?.sub) {
+            return { success: false, error: "Unauthorized" };
+        }
+
+        const idVal = validateUuid(articleId, "article id");
+        if (!idVal.valid) {
+            return { success: false, error: idVal.error };
+        }
+
+        const sharedId = getSharedUserId();
+
+        const { error } = await supabase
+            .from("articles")
+            .update({ is_hidden: true })
+            .eq("id", idVal.value!)
+            .eq("user_id", sharedId);
+
+        if (error) {
+            console.error("[articles] deleteArticle:", error.message);
+            return { success: false, error: "Gagal menghapus artikel dari database" };
+        }
+
+        revalidatePath("/dashboard");
+        return { success: true };
+    } catch (err) {
+        console.error("[articles] deleteArticle:", err);
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Terjadi kesalahan saat menghapus artikel",
         };
     }
 }

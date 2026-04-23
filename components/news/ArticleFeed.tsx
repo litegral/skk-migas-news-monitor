@@ -87,6 +87,11 @@ export function ArticleFeed({
     );
   }, []);
 
+  const handleArticleDeleted = useCallback((articleId: string) => {
+    setArticles((prev) => prev.filter((a) => a.id !== articleId));
+    setTotal((prev) => Math.max(0, prev - 1));
+  }, []);
+
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
@@ -364,6 +369,7 @@ export function ArticleFeed({
               article={article}
               topicMap={topicMap}
               onSentimentUpdated={handleSentimentUpdated}
+              onArticleDeleted={handleArticleDeleted}
             />
           ))
         ) : (

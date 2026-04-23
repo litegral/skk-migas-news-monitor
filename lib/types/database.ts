@@ -118,6 +118,7 @@ export interface Database {
           decode_failed: boolean;
           /** LLM's explanation for why it chose the sentiment/categories. */
           ai_reason: string | null;
+          is_hidden: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -145,6 +146,7 @@ export interface Database {
           url_decoded?: boolean;
           decode_failed?: boolean;
           ai_reason?: string | null;
+          is_hidden?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -172,6 +174,7 @@ export interface Database {
           url_decoded?: boolean;
           decode_failed?: boolean;
           ai_reason?: string | null;
+          is_hidden?: boolean;
           created_at?: string;
           updated_at?: string;
         };

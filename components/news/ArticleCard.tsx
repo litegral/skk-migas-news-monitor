@@ -10,10 +10,11 @@ import {
   RiHashtag,
   RiInformationLine,
   RiMore2Fill,
+  RiDeleteBinLine,
 } from "@remixicon/react";
 
 import type { Article, Sentiment } from "@/lib/types/news";
-import { updateArticleSentimentAction } from "@/app/actions/articles";
+import { updateArticleSentimentAction, deleteArticleAction } from "@/app/actions/articles";
 import { Card } from "@/components/ui/Card";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/Tooltip";
 import { Badge } from "@/components/ui/Badge";
@@ -23,6 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/DropdownMenu";
 import { SentimentBadge } from "./SentimentBadge";
 import { CategoryBadge } from "./CategoryBadge";
@@ -37,10 +39,13 @@ interface ArticleCardProps {
     articleId: string,
     sentiment: Sentiment,
   ) => void;
+  /** Called after the user successfully deletes an article. */
+  onArticleDeleted?: (articleId: string) => void;
 }
 
-export function ArticleCard({ article, topicMap, onSentimentUpdated }: Readonly<ArticleCardProps>) {
+export function ArticleCard({ article, topicMap, onSentimentUpdated, onArticleDeleted }: Readonly<ArticleCardProps>) {
   const [isSentimentPending, startSentimentTransition] = useTransition();
+  const [isDeletePending, startDeleteTransition] = useTransition();
 
   const dateIso = article.publishedAt ?? article.createdAt;
   const publishedDate = dateIso
@@ -59,6 +64,24 @@ export function ArticleCard({ article, topicMap, onSentimentUpdated }: Readonly<
       const res = await updateArticleSentimentAction(articleId, next);
       if (res.success) {
         onSentimentUpdated?.(articleId, next);
+      }
+    });
+  }
+
+  function handleDelete() {
+    const articleId = article.id;
+    if (!articleId) return;
+    
+    if (!window.confirm("Apakah Anda yakin ingin menghapus artikel ini? Tindakan ini tidak dapat dibatalkan.")) {
+      return;
+    }
+
+    startDeleteTransition(async () => {
+      const res = await deleteArticleAction(articleId);
+      if (res.success) {
+        onArticleDeleted?.(articleId);
+      } else {
+        alert(res.error || "Gagal menghapus artikel");
       }
     });
   }
@@ -187,14 +210,14 @@ export function ArticleCard({ article, topicMap, onSentimentUpdated }: Readonly<
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      disabled={isSentimentPending}
+                      disabled={isSentimentPending || isDeletePending}
                       className={cx(
                         "inline-flex size-7 shrink-0 items-center justify-center rounded-md text-gray-400",
                         "transition-colors hover:bg-gray-100 hover:text-gray-700",
                         "dark:hover:bg-gray-800 dark:hover:text-gray-200",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
                         "dark:focus-visible:ring-offset-gray-950",
-                        isSentimentPending && "cursor-wait opacity-60",
+                        (isSentimentPending || isDeletePending) && "cursor-wait opacity-60",
                         article.sentimentManuallyOverridden &&
                           "text-blue-600 dark:text-blue-400",
                       )}
@@ -240,6 +263,17 @@ export function ArticleCard({ article, topicMap, onSentimentUpdated }: Readonly<
                     </DropdownMenuItem>
                   );
                 })}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={isDeletePending || isSentimentPending}
+                  onSelect={handleDelete}
+                  className="gap-2 text-red-600 focus:bg-red-50 focus:text-red-700 dark:text-red-400 dark:focus:bg-red-950/50 dark:focus:text-red-300"
+                >
+                  <span className="flex w-4 items-center justify-center">
+                    <RiDeleteBinLine className="size-4" />
+                  </span>
+                  Hapus Artikel
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
