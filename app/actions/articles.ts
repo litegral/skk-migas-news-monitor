@@ -10,6 +10,7 @@ import type { ArticleInsert } from "@/lib/types/database";
 import type { Article, Sentiment } from "@/lib/types/news";
 import { validateString, validateUuid } from "@/lib/utils/validateInput";
 import { validateUrl } from "@/lib/utils/validateUrl";
+import { logAdminAction } from "@/lib/actions/logs";
 
 /** Max rows returned in one export (PostgREST single-response limit). */
 const MAX_EXPORT_ROWS = 10_000;
@@ -276,6 +277,12 @@ export async function updateArticleSentimentAction(
 
         const sharedId = getSharedUserId();
 
+        const { data: currentArticle } = await supabase
+            .from("articles")
+            .select("title")
+            .eq("id", idVal.value!)
+            .single();
+
         const { data: updated, error: updateErr } = await supabase
             .from("articles")
             .update({
@@ -300,6 +307,14 @@ export async function updateArticleSentimentAction(
                 error: "Artikel tidak ditemukan",
             };
         }
+
+        await logAdminAction(
+            "UPDATE_ARTICLE_SENTIMENT",
+            "ARTICLE",
+            idVal.value!,
+            currentArticle?.title ?? idVal.value!,
+            { sentiment: sVal.value }
+        );
 
         revalidatePath("/dashboard");
         return { success: true };
@@ -483,7 +498,7 @@ export async function addCustomArticleAction(
                 : {}),
         };
 
-        const { error: insertErr } = await supabase.from("articles").insert(insertRow);
+        const { data: insertedData, error: insertErr } = await supabase.from("articles").insert(insertRow).select("id").single();
 
         if (insertErr) {
             if (insertErr.code === "23505") {
@@ -495,6 +510,13 @@ export async function addCustomArticleAction(
             console.error("[articles] addCustomArticle insert:", insertErr.message);
             return { success: false, error: "Failed to save article" };
         }
+
+        await logAdminAction(
+            "ADD_ARTICLE",
+            "ARTICLE",
+            insertedData?.id ?? "unknown",
+            titleValidation.value!
+        );
 
         revalidatePath("/settings");
         revalidatePath("/dashboard");
@@ -523,6 +545,12 @@ export async function deleteArticleAction(articleId: string): Promise<{ success:
 
         const sharedId = getSharedUserId();
 
+        const { data: currentArticle } = await supabase
+            .from("articles")
+            .select("title")
+            .eq("id", idVal.value!)
+            .single();
+
         const { error } = await supabase
             .from("articles")
             .update({ is_hidden: true })
@@ -533,6 +561,13 @@ export async function deleteArticleAction(articleId: string): Promise<{ success:
             console.error("[articles] deleteArticle:", error.message);
             return { success: false, error: "Gagal menghapus artikel dari database" };
         }
+
+        await logAdminAction(
+            "DELETE_ARTICLE",
+            "ARTICLE",
+            idVal.value!,
+            currentArticle?.title ?? idVal.value!
+        );
 
         revalidatePath("/dashboard");
         return { success: true };

@@ -14,6 +14,7 @@ import {
   RiFireLine,
   RiSideBarLine,
   RiSideBarFill,
+  RiHistoryLine,
 } from "@remixicon/react";
 
 import { createClient } from "@/lib/supabase/client";
@@ -24,6 +25,7 @@ import { Button } from "@/components/ui/Button";
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: RiDashboardLine },
   { name: "Settings", href: "/settings", icon: RiSettings3Line },
+  { name: "Logs", href: "/logs", icon: RiHistoryLine },
 ] as const;
 
 export function Sidebar({ className }: Readonly<{ className?: string }>) {

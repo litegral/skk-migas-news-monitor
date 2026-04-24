@@ -11,6 +11,7 @@ import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
 import { validateString, validateUuid } from "@/lib/utils/validateInput";
 import { validateUrl } from "@/lib/utils/validateUrl";
+import { logAdminAction } from "@/lib/actions/logs";
 
 interface ActionResult {
   success: boolean;
@@ -49,12 +50,12 @@ export async function addRSSFeed(
       return { success: false, error: "Not authenticated" };
     }
 
-    const { error } = await supabase.from("rss_feeds").insert({
+    const { data: insertedData, error } = await supabase.from("rss_feeds").insert({
       user_id: user.id,
       name: nameValidation.value!,
       url: urlValidation.normalizedUrl!,
       enabled: true,
-    });
+    }).select("id").single();
 
     if (error) {
       // Handle unique constraint violation
@@ -64,6 +65,13 @@ export async function addRSSFeed(
       console.error("[settings] addRSSFeed error:", error.message);
       return { success: false, error: "Failed to add feed" };
     }
+
+    await logAdminAction(
+      "ADD_RSS_FEED",
+      "RSS_FEED",
+      insertedData?.id ?? "unknown",
+      nameValidation.value!
+    );
 
     revalidatePath("/settings");
     return { success: true };
@@ -127,6 +135,12 @@ export async function updateRSSFeed(
       return { success: false, error: "Not authenticated" };
     }
 
+    const { data: currentFeed } = await supabase
+      .from("rss_feeds")
+      .select("name")
+      .eq("id", idValidation.value!)
+      .single();
+
     const { error } = await supabase
       .from("rss_feeds")
       .update(updateData)
@@ -140,6 +154,14 @@ export async function updateRSSFeed(
       console.error("[settings] updateRSSFeed error:", error.message);
       return { success: false, error: "Failed to update feed" };
     }
+
+    await logAdminAction(
+      "UPDATE_RSS_FEED",
+      "RSS_FEED",
+      idValidation.value!,
+      updateData.name ? (updateData.name as string) : (currentFeed?.name ?? idValidation.value!),
+      updateData
+    );
 
     revalidatePath("/settings");
     return { success: true };
@@ -166,6 +188,12 @@ export async function deleteRSSFeed(id: string): Promise<ActionResult> {
       return { success: false, error: "Not authenticated" };
     }
 
+    const { data: currentFeed } = await supabase
+      .from("rss_feeds")
+      .select("name")
+      .eq("id", idValidation.value!)
+      .single();
+
     const { error } = await supabase
       .from("rss_feeds")
       .delete()
@@ -176,6 +204,13 @@ export async function deleteRSSFeed(id: string): Promise<ActionResult> {
       console.error("[settings] deleteRSSFeed error:", error.message);
       return { success: false, error: "Failed to delete feed" };
     }
+
+    await logAdminAction(
+      "DELETE_RSS_FEED",
+      "RSS_FEED",
+      idValidation.value!,
+      currentFeed?.name ?? idValidation.value!
+    );
 
     revalidatePath("/settings");
     return { success: true };
@@ -231,12 +266,12 @@ export async function addTopic(
       return { success: false, error: "Not authenticated" };
     }
 
-    const { error } = await supabase.from("topics").insert({
+    const { data: insertedData, error } = await supabase.from("topics").insert({
       user_id: getSharedUserId(),
       name: nameValidation.value!,
       keywords: validatedKeywords,
       enabled: true,
-    });
+    }).select("id").single();
 
     if (error) {
       if (error.code === "23505") {
@@ -245,6 +280,13 @@ export async function addTopic(
       console.error("[settings] addTopic error:", error.message);
       return { success: false, error: "Failed to add topic" };
     }
+
+    await logAdminAction(
+      "ADD_TOPIC",
+      "TOPIC",
+      insertedData?.id ?? "unknown",
+      nameValidation.value!
+    );
 
     revalidatePath("/settings");
     return { success: true };
@@ -323,6 +365,12 @@ export async function updateTopic(
       return { success: false, error: "Not authenticated" };
     }
 
+    const { data: currentTopic } = await supabase
+      .from("topics")
+      .select("name")
+      .eq("id", idValidation.value!)
+      .single();
+
     const { error } = await supabase
       .from("topics")
       .update(updateData)
@@ -336,6 +384,14 @@ export async function updateTopic(
       console.error("[settings] updateTopic error:", error.message);
       return { success: false, error: "Failed to update topic" };
     }
+
+    await logAdminAction(
+      "UPDATE_TOPIC",
+      "TOPIC",
+      idValidation.value!,
+      updateData.name ? (updateData.name as string) : (currentTopic?.name ?? idValidation.value!),
+      updateData
+    );
 
     revalidatePath("/settings");
     return { success: true };
@@ -362,6 +418,12 @@ export async function deleteTopic(id: string): Promise<ActionResult> {
       return { success: false, error: "Not authenticated" };
     }
 
+    const { data: currentTopic } = await supabase
+      .from("topics")
+      .select("name")
+      .eq("id", idValidation.value!)
+      .single();
+
     // 1. Remove this topic ID from all articles' matched_topic_ids arrays
     const { error: cleanupError } = await supabase.rpc("remove_topic_from_articles", {
       p_topic_id: idValidation.value!,
@@ -382,6 +444,13 @@ export async function deleteTopic(id: string): Promise<ActionResult> {
       console.error("[settings] deleteTopic error:", error.message);
       return { success: false, error: "Failed to delete topic" };
     }
+
+    await logAdminAction(
+      "DELETE_TOPIC",
+      "TOPIC",
+      idValidation.value!,
+      currentTopic?.name ?? idValidation.value!
+    );
 
     revalidatePath("/settings");
     revalidatePath("/dashboard");

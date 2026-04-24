@@ -180,6 +180,39 @@ export interface Database {
         };
         Relationships: [];
       };
+      admin_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          action_type: string;
+          entity_type: string;
+          entity_id: string;
+          entity_name: string;
+          details: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          action_type: string;
+          entity_type: string;
+          entity_id: string;
+          entity_name: string;
+          details?: Json | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          action_type?: string;
+          entity_type?: string;
+          entity_id?: string;
+          entity_name?: string;
+          details?: Json | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -203,13 +236,16 @@ export interface Database {
 export type RSSFeedRow = Database["public"]["Tables"]["rss_feeds"]["Row"];
 export type TopicRow = Database["public"]["Tables"]["topics"]["Row"];
 export type ArticleRow = Database["public"]["Tables"]["articles"]["Row"];
+export type AdminLogRow = Database["public"]["Tables"]["admin_logs"]["Row"];
 
 /** Convenience aliases for insert types */
 export type RSSFeedInsert = Database["public"]["Tables"]["rss_feeds"]["Insert"];
 export type TopicInsert = Database["public"]["Tables"]["topics"]["Insert"];
 export type ArticleInsert = Database["public"]["Tables"]["articles"]["Insert"];
+export type AdminLogInsert = Database["public"]["Tables"]["admin_logs"]["Insert"];
 
 /** Convenience aliases for update types */
 export type RSSFeedUpdate = Database["public"]["Tables"]["rss_feeds"]["Update"];
 export type TopicUpdate = Database["public"]["Tables"]["topics"]["Update"];
 export type ArticleUpdate = Database["public"]["Tables"]["articles"]["Update"];
+export type AdminLogUpdate = Database["public"]["Tables"]["admin_logs"]["Update"];
