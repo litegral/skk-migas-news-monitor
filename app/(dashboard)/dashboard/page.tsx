@@ -5,7 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 import { getDashboardPeriodFromCookie } from "@/lib/actions/dashboard-period";
 import type { DashboardPeriod } from "@/lib/types/dashboard";
 import { DEFAULT_PERIOD, PERIOD_OPTIONS } from "@/lib/types/dashboard";
-import { getActiveTopics, getPaginatedArticles } from "@/lib/services/dashboard";
+import {
+  getActiveTopics,
+  getArticleFilterOptions,
+  getPaginatedArticles,
+} from "@/lib/services/dashboard";
 
 import { DashboardClient } from "@/components/dashboard/DashboardClient";
 import { DashboardWidgets } from "@/components/dashboard/ServerWidgets";
@@ -33,20 +37,26 @@ export default async function DashboardPage(
   }
 
   // Fetch base layout data (topics, active flags, etc.)
-  const { topicMap, availableTopics } = await getActiveTopics();
-
-  // Fetch initial articles for the feed (page 1)
-  const { articles: initialArticles, total: totalArticles } = await getPaginatedArticles(1, 10);
+  const [
+    { topicMap, availableTopics },
+    { articles: initialArticles, total: totalArticles },
+    filterOptions,
+  ] = await Promise.all([
+    getActiveTopics(),
+    getPaginatedArticles(1, 10),
+    getArticleFilterOptions(),
+  ]);
 
   // Pending/decode/failed counts for SyncStatusIndicator pipeline + Tertunda badge. 
   // It's fetched lightly. We can just do a very quick count query.
   const supabase = await createClient();
-  const { data: topicsData } = await supabase
-    .from("topics")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  const { data: claimsData } = await supabase.auth.getClaims();
+  const [{ data: topicsData }, { data: claimsData }] = await Promise.all([
+    supabase
+      .from("topics")
+      .select("*")
+      .order("created_at", { ascending: false }),
+    supabase.auth.getClaims(),
+  ]);
   const userId = claimsData?.claims?.sub;
 
   let pendingCount = 0;
@@ -96,6 +106,8 @@ export default async function DashboardPage(
       decodePendingCount={decodePendingCount}
       initialArticles={initialArticles}
       totalArticles={totalArticles}
+      initialCategories={filterOptions.categories}
+      initialSources={filterOptions.sources}
     />
   );
 }

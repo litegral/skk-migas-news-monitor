@@ -11,9 +11,9 @@ import {
 
 import type { TopicRow } from "@/lib/types/database";
 import { addTopic, updateTopic, deleteTopic } from "@/lib/actions/settings";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { Switch } from "@/components/ui/Switch";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { cx } from "@/lib/utils";
 
 interface TopicManagerProps {

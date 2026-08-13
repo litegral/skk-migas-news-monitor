@@ -13,7 +13,7 @@ import {
 } from "@remixicon/react";
 import type { RemixiconComponentType } from "@remixicon/react";
 
-import { Card } from "@/components/ui/Card";
+import { Card } from "@/components/ui/card";
 import { cx } from "@/lib/utils";
 import type { DashboardPeriod } from "@/lib/types/dashboard";
 import { getPeriodLabel } from "@/lib/types/dashboard";
@@ -75,26 +75,26 @@ export function KPICard({ type, value, period }: Readonly<KPICardProps>) {
   const Icon = config.icon;
 
   return (
-    <Card className="h-full">
-      <div className="flex items-center gap-3">
+    <Card className="h-full overflow-hidden p-4 sm:p-5">
+      <div className="flex items-start gap-3">
         <div
           className={cx(
-            "flex size-10 shrink-0 items-center justify-center rounded-lg",
+            "flex size-10 shrink-0 items-center justify-center rounded-xl",
             colorClasses[config.color],
           )}
         >
           <Icon className="size-5" aria-hidden="true" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+          <p className="truncate text-xs font-medium text-slate-500 dark:text-slate-400">
             {config.name}
           </p>
-          <p className="text-2xl font-semibold text-gray-900 dark:text-gray-50">
+          <p className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-slate-950 tabular-nums dark:text-white">
             {value.toLocaleString("id-ID")}
           </p>
         </div>
       </div>
-      <p className="mt-3 text-xs text-gray-400 dark:text-gray-500">
+      <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
         {config.getDescription(periodLabel)}
       </p>
     </Card>

@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 
 import { getSharedUserId } from "@/lib/config/sharedData";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveTopics, dashboardArticleSelect, DashboardArticleRow, toDashboardArticle } from "@/lib/services/dashboard";
+import {
+    getActiveTopics,
+    getArticleFilterOptions,
+    dashboardArticleSelect,
+    DashboardArticleRow,
+    toDashboardArticle,
+} from "@/lib/services/dashboard";
 import { matchTopicIdsForText } from "@/lib/services/rss";
 import type { ArticleInsert } from "@/lib/types/database";
 import type { Article, Sentiment } from "@/lib/types/news";
@@ -329,46 +335,7 @@ export async function updateArticleSentimentAction(
 
 export async function getArticleFilterOptionsAction(): Promise<{ categories: string[]; sources: string[]; error?: string }> {
     try {
-        const supabase = await createClient();
-        const { data: claimsData } = await supabase.auth.getClaims();
-        const userId = claimsData?.claims?.sub;
-
-        if (!userId) {
-            return { categories: [], sources: [], error: "Unauthorized" };
-        }
-
-        // To get distinct values efficiently, we'll fetch only the columns we need.
-        // For a very large dataset, a dedicated RPC or distinct view might be better,
-        // but this works for standard dashboard volumes.
-        const { data, error } = await supabase
-            .from("articles")
-            .select("categories, source_name")
-            .eq("user_id", getSharedUserId())
-            .eq("ai_processed", true);
-
-        if (error) {
-            console.error("Error fetching filter options:", error);
-            return { categories: [], sources: [], error: error.message };
-        }
-
-        const uniqueCategories = new Set<string>();
-        const uniqueSources = new Set<string>();
-
-        for (const row of data || []) {
-            if (row.source_name) {
-                uniqueSources.add(row.source_name);
-            }
-            if (row.categories && Array.isArray(row.categories)) {
-                for (const cat of row.categories) {
-                    uniqueCategories.add(cat);
-                }
-            }
-        }
-
-        return {
-            categories: Array.from(uniqueCategories).sort(),
-            sources: Array.from(uniqueSources).sort()
-        };
+        return await getArticleFilterOptions();
     } catch (err: unknown) {
         return { categories: [], sources: [], error: err instanceof Error ? err.message : "Unknown error" };
     }

@@ -8,7 +8,7 @@
  */
 
 import { useState, useMemo } from "react";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,7 +16,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/DropdownMenu";
+} from "@/components/ui/dropdown-menu";
 import { RiFileExcel2Line, RiCalendarLine } from "@remixicon/react";
 import { format, subDays, startOfMonth, endOfMonth, endOfDay, startOfDay } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
@@ -87,6 +87,7 @@ export function ExportButton({
   topicMap,
 }: Readonly<ExportButtonProps>) {
   const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Generate month options (last 6 months)
   const monthOptions = useMemo(() => generateMonthOptions(6), []);
@@ -104,6 +105,7 @@ export function ExportButton({
     label: string
   ) => {
     setIsExporting(true);
+    setExportError(null);
 
     try {
       const base: Omit<ArticlesExportQueryParams, "dateFrom" | "dateTo"> = {
@@ -128,14 +130,22 @@ export function ExportButton({
         await getArticlesForExportAction(payload);
 
       if (error) {
-        console.error("[ExportButton] Export fetch failed:", error);
-        return;
+        throw new Error(error);
+      }
+
+      if (articlesToExport.length === 0) {
+        throw new Error("Tidak ada artikel dalam rentang yang dipilih.");
       }
 
       const filename = `berita-skk-migas-${sanitizeFilename(label)}`;
       await exportArticlesToExcel(articlesToExport, { filename, topicMap });
     } catch (error) {
       console.error("[ExportButton] Export failed:", error);
+      setExportError(
+        error instanceof Error
+          ? error.message
+          : "File Excel gagal dibuat. Silakan coba lagi.",
+      );
     } finally {
       setIsExporting(false);
     }
@@ -200,6 +210,11 @@ export function ExportButton({
           <RiFileExcel2Line className="mr-2 size-4 text-gray-500" />
           Semua Artikel
         </DropdownMenuItem>
+        {exportError && (
+          <p role="alert" className="mx-1 mt-1 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+            {exportError}
+          </p>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

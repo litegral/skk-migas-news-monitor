@@ -1,5 +1,5 @@
 import type { Sentiment } from "@/lib/types/news";
-import { Badge, type BadgeProps } from "@/components/ui/Badge";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 
 interface SentimentBadgeProps extends Omit<BadgeProps, "variant"> {
   sentiment: Sentiment | null;

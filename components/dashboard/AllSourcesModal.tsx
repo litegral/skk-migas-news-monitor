@@ -7,7 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogCloseButton,
-} from "@/components/ui/Dialog";
+} from "@/components/ui/dialog";
 
 export interface SourceData {
   name: string;

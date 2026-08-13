@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 
 import { createClient } from "@/lib/supabase/server";
-import { Card } from "@/components/ui/Card";
+import { Card } from "@/components/ui/card";
 import { RSSFeedManager } from "@/components/settings/RSSFeedManager";
 import { TopicManager } from "@/components/settings/TopicManager";
+import { PageHeader } from "@/components/dashboard/PageHeader";
 
 export const metadata: Metadata = {
   title: "Settings - SKK Migas Kalsul News Monitor",
@@ -26,19 +27,15 @@ export default async function SettingsPage() {
 
   return (
     <>
-      {/* Page header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-50">
-          Settings
-        </h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Kelola topik dan sumber RSS feed Anda.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Konfigurasi workspace"
+        title="Pengaturan"
+        description="Kelola topik pemantauan dan sumber RSS yang digunakan untuk menghimpun berita."
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Topics section */}
-        <Card className="p-4 sm:p-6">
+        <Card className="p-5 sm:p-6">
           <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50">
             Topik
           </h2>
@@ -51,7 +48,7 @@ export default async function SettingsPage() {
         </Card>
 
         {/* RSS Feeds section */}
-        <Card className="p-4 sm:p-6">
+        <Card className="p-5 sm:p-6">
           <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50">
             RSS Feeds
           </h2>

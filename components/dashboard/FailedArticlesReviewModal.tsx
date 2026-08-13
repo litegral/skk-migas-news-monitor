@@ -14,7 +14,7 @@ import {
   updateArticleSentimentAction,
 } from "@/app/actions/articles";
 import type { Article, Sentiment } from "@/lib/types/news";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -22,15 +22,15 @@ import {
   DialogHeader,
   DialogTitle,
   DialogCloseButton,
-} from "@/components/ui/Dialog";
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
-} from "@/components/ui/DropdownMenu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
+} from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SentimentBadge } from "@/components/news/SentimentBadge";
 
 const SENTIMENT_OPTIONS = [

@@ -2,8 +2,8 @@
 
 import React, { useState, useMemo } from "react";
 import { RiArrowDownSLine, RiCheckLine, RiCloseLine, RiSearchLine } from "@remixicon/react";
-import { Popover, PopoverContent, PopoverTrigger } from "./Popover";
-import { Badge } from "./Badge";
+import { Popover, PopoverContent, PopoverTrigger } from "./popover";
+import { Badge } from "./badge";
 import { cx, focusInput } from "@/lib/utils";
 
 export interface MultiSelectProps {

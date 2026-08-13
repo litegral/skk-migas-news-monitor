@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { formatDistanceToNow } from "date-fns";
+import { id } from "date-fns/locale";
 import { useTransition } from "react";
 import {
   RiAlertLine,
@@ -15,9 +16,9 @@ import {
 
 import type { Article, Sentiment } from "@/lib/types/news";
 import { updateArticleSentimentAction, deleteArticleAction } from "@/app/actions/articles";
-import { Card } from "@/components/ui/Card";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/Tooltip";
-import { Badge } from "@/components/ui/Badge";
+import { Card } from "@/components/ui/card";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +26,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-} from "@/components/ui/DropdownMenu";
+} from "@/components/ui/dropdown-menu";
 import { SentimentBadge } from "./SentimentBadge";
 import { CategoryBadge } from "./CategoryBadge";
 import { cx } from "@/lib/utils";
@@ -49,7 +50,7 @@ export function ArticleCard({ article, topicMap, onSentimentUpdated, onArticleDe
 
   const dateIso = article.publishedAt ?? article.createdAt;
   const publishedDate = dateIso
-    ? formatDistanceToNow(new Date(dateIso), { addSuffix: true })
+    ? formatDistanceToNow(new Date(dateIso), { addSuffix: true, locale: id })
     : null;
 
   // Resolve topic IDs to names
@@ -87,22 +88,22 @@ export function ArticleCard({ article, topicMap, onSentimentUpdated, onArticleDe
   }
 
   return (
-    <Card className="flex flex-col gap-4 p-4 sm:flex-row">
+    <Card className="group/card flex flex-col gap-4 p-3.5 transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_10px_28px_rgba(15,23,42,0.07)] sm:flex-row sm:p-4 dark:hover:border-slate-700 dark:hover:shadow-black/20">
       {/* Thumbnail */}
       {article.photoUrl && (
-        <div className="relative h-32 w-full shrink-0 overflow-hidden rounded-md sm:h-24 sm:w-32">
+        <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden rounded-lg bg-slate-100 sm:h-28 sm:w-40 dark:bg-slate-800">
           <Image
             src={article.photoUrl}
             alt=""
             fill
-            className="object-cover"
-            sizes="(max-width: 640px) 100vw, 128px"
+            className="object-cover transition-transform duration-300 group-hover/card:scale-[1.025]"
+            sizes="(max-width: 640px) 100vw, 160px"
           />
         </div>
       )}
 
       {/* Content */}
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
+      <div className="flex min-w-0 flex-1 flex-col gap-2.5 py-0.5">
         {/* Title + external link */}
         <div className="flex items-start gap-2">
           <a
@@ -111,7 +112,7 @@ export function ArticleCard({ article, topicMap, onSentimentUpdated, onArticleDe
             rel="noopener noreferrer"
             className="group flex-1"
           >
-            <h3 className="line-clamp-2 text-sm font-semibold text-gray-900 group-hover:text-blue-600 dark:text-gray-50 dark:group-hover:text-blue-400">
+            <h3 className="line-clamp-2 text-[0.925rem] font-semibold leading-snug tracking-[-0.01em] text-slate-950 transition-colors group-hover:text-blue-700 dark:text-white dark:group-hover:text-blue-300">
               {article.title}
             </h3>
           </a>
@@ -119,7 +120,7 @@ export function ArticleCard({ article, topicMap, onSentimentUpdated, onArticleDe
             href={article.decodedUrl || article.link}
             target="_blank"
             rel="noopener noreferrer"
-            className="shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             aria-label="Open article in new tab"
           >
             <RiExternalLinkLine className="size-4" />
@@ -127,7 +128,7 @@ export function ArticleCard({ article, topicMap, onSentimentUpdated, onArticleDe
         </div>
 
         {/* Source + date */}
-        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+        <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
           {article.sourceType === "custom" && (
             <Badge variant="neutral" className="px-1.5 py-0 text-[10px] font-medium uppercase tracking-wide">
               Manual
@@ -141,7 +142,7 @@ export function ArticleCard({ article, topicMap, onSentimentUpdated, onArticleDe
         </div>
 
         {/* Summary or snippet */}
-        <p className="line-clamp-2 text-sm text-gray-600 dark:text-gray-300">
+        <p className="line-clamp-2 text-sm leading-5 text-slate-600 dark:text-slate-300">
           {article.summary || article.snippet || "Tidak ada deskripsi tersedia."}
         </p>
 
@@ -185,7 +186,7 @@ export function ArticleCard({ article, topicMap, onSentimentUpdated, onArticleDe
         )}
 
         {/* Sentiment and category badges */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="mt-auto flex flex-wrap items-center gap-2 pt-0.5">
           {article.aiReason && (
             <Tooltip>
               <TooltipTrigger asChild>

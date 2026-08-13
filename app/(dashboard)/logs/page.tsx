@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
-import { Card } from "@/components/ui/Card";
+import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/dashboard/PageHeader";
 
 export const metadata: Metadata = {
   title: "Admin Logs - SKK Migas Kalsul News Monitor",
@@ -18,16 +19,13 @@ export default async function AdminLogsPage() {
 
   return (
     <>
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-50">
-          Admin Logs
-        </h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Riwayat interaksi dan perubahan yang dilakukan oleh admin.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Audit trail"
+        title="Log Aktivitas"
+        description="Tinjau riwayat interaksi dan perubahan yang dilakukan oleh pengelola workspace."
+      />
 
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-600 dark:text-gray-400">
             <thead className="border-b border-gray-200 bg-gray-50 text-gray-900 dark:border-gray-800 dark:bg-gray-900/50 dark:text-gray-100">

@@ -1,7 +1,22 @@
 "use client";
 
-import { Card } from "@/components/ui/Card";
-import { AreaChart } from "@/components/ui/AreaChart";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import { Card } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import type { DashboardPeriod } from "@/lib/types/dashboard";
 import { getPeriodLabel } from "@/lib/types/dashboard";
 
@@ -17,39 +32,65 @@ interface SentimentChartProps {
   period: DashboardPeriod;
 }
 
+const chartConfig = {
+  Positif: { label: "Positif", color: "#059669" },
+  Netral: { label: "Netral", color: "#64748b" },
+  Negatif: { label: "Negatif", color: "#e11d48" },
+} satisfies ChartConfig;
+
 export function SentimentChart({ data, period }: Readonly<SentimentChartProps>) {
-  const hasData = data.length > 0;
   const periodLabel = getPeriodLabel(period);
 
   return (
-    <Card>
-      <h2 className="text-sm font-medium text-gray-900 dark:text-gray-50">
-        Sentimen dari Waktu ke Waktu
-      </h2>
-      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-        Distribusi sentimen artikel harian ({periodLabel})
-      </p>
+    <Card className="h-full">
+      <div>
+        <h2 className="text-sm font-semibold text-foreground">Tren Sentimen</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Pergerakan artikel harian · {periodLabel}
+        </p>
+      </div>
 
-      {hasData ? (
-        <div className="mt-4">
-          <AreaChart
-            data={data}
-            index="date"
-            categories={["Positif", "Netral", "Negatif"]}
-            colors={["emerald", "gray", "pink"]}
-            valueFormatter={(value) => value.toString()}
-            showLegend={true}
-            showGridLines={true}
-            className="h-64"
-          />
-        </div>
+      {data.length > 0 ? (
+        <ChartContainer config={chartConfig} className="h-56 w-full aspect-auto">
+          <AreaChart data={data} margin={{ left: -20, right: 8, top: 8 }}>
+            <defs>
+              {Object.entries(chartConfig).map(([key, config]) => (
+                <linearGradient key={key} id={`fill-${key}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={config.color} stopOpacity={0.24} />
+                  <stop offset="95%" stopColor={config.color} stopOpacity={0.02} />
+                </linearGradient>
+              ))}
+            </defs>
+            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <XAxis dataKey="date" tickLine={false} axisLine={false} minTickGap={24} />
+            <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+            <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
+            <ChartLegend content={<ChartLegendContent />} />
+            {Object.entries(chartConfig).map(([key, config]) => (
+              <Area
+                key={key}
+                dataKey={key}
+                type="monotone"
+                fill={`url(#fill-${key})`}
+                stroke={config.color}
+                strokeWidth={2.25}
+                dot={false}
+                activeDot={{ r: 4, strokeWidth: 0 }}
+              />
+            ))}
+          </AreaChart>
+        </ChartContainer>
       ) : (
-        <div className="mt-4 flex h-64 items-center justify-center rounded-md border border-dashed border-gray-300 dark:border-gray-700">
-          <p className="text-sm text-gray-400 dark:text-gray-500">
-            Belum ada data untuk periode {periodLabel.toLowerCase()}
-          </p>
-        </div>
+        <EmptyChart message={`Belum ada data untuk ${periodLabel.toLowerCase()}`} />
       )}
     </Card>
+  );
+}
+
+function EmptyChart({ message }: Readonly<{ message: string }>) {
+  return (
+    <div className="flex h-56 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+      {message}
+    </div>
   );
 }

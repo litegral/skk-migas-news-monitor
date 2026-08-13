@@ -7,15 +7,20 @@ export function cx(...args: ClassValue[]) {
   return twMerge(clsx(...args));
 }
 
+/** Standard shadcn/ui class-name merger. */
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
 // Tremor focusInput [v0.0.2]
 
 export const focusInput = [
   // base
   "focus:ring-2",
   // ring color
-  "focus:ring-blue-200 dark:focus:ring-blue-700/30",
+  "focus:ring-blue-100 dark:focus:ring-blue-500/20",
   // border color
-  "focus:border-blue-500 dark:focus:border-blue-700",
+  "focus:border-blue-500 dark:focus:border-blue-500",
 ];
 
 // Tremor Raw focusRing [v0.0.1]

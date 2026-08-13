@@ -1,7 +1,16 @@
 "use client";
 
-import { Card } from "@/components/ui/Card";
-import { DonutChart } from "@/components/ui/DonutChart";
+import { Label, Pie, PieChart } from "recharts";
+
+import { Card } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import type { DashboardPeriod, SentimentPieData } from "@/lib/types/dashboard";
 import { getPeriodLabel } from "@/lib/types/dashboard";
 
@@ -10,52 +19,66 @@ interface SentimentPieChartProps {
   period: DashboardPeriod;
 }
 
-// Sentiment color mapping (consistent regardless of order)
-const SENTIMENT_COLORS: Record<string, "emerald" | "pink" | "gray"> = {
-  Positif: "emerald",
-  Negatif: "pink",
-  Netral: "gray",
-};
+const chartConfig = {
+  positive: { label: "Positif", color: "#059669" },
+  neutral: { label: "Netral", color: "#64748b" },
+  negative: { label: "Negatif", color: "#e11d48" },
+} satisfies ChartConfig;
 
 export function SentimentPieChart({ data, period }: Readonly<SentimentPieChartProps>) {
-  const hasData = data.total > 0;
   const periodLabel = getPeriodLabel(period);
-
-  // Create chart data sorted by count (descending)
   const chartData = [
-    { name: "Positif", value: data.positive },
-    { name: "Negatif", value: data.negative },
-    { name: "Netral", value: data.neutral },
-  ].sort((a, b) => b.value - a.value);
-
-  // Colors array must match the sorted order
-  const colors = chartData.map((item) => SENTIMENT_COLORS[item.name]);
+    { sentiment: "positive", articles: data.positive, fill: "var(--color-positive)" },
+    { sentiment: "neutral", articles: data.neutral, fill: "var(--color-neutral)" },
+    { sentiment: "negative", articles: data.negative, fill: "var(--color-negative)" },
+  ].filter((item) => item.articles > 0);
 
   return (
-    <Card>
-      <h2 className="text-sm font-medium text-gray-900 dark:text-gray-50">
-        Distribusi Sentimen
-      </h2>
-      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-        Proporsi sentimen artikel ({periodLabel})
-      </p>
+    <Card className="h-full">
+      <div>
+        <h2 className="text-sm font-semibold text-foreground">Komposisi Sentimen</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Perbandingan sentimen · {periodLabel}
+        </p>
+      </div>
 
-      {hasData ? (
-        <div className="mt-4">
-          <DonutChart
-            data={chartData}
-            colors={colors}
-            valueFormatter={(value) => `${value} artikel`}
-            label={`${data.total}`}
-            showLegend={true}
-            showTooltip={true}
-          />
-        </div>
+      {data.total > 0 ? (
+        <ChartContainer config={chartConfig} className="mx-auto h-56 w-full max-w-md aspect-auto">
+          <PieChart>
+            <ChartTooltip
+              cursor={false}
+              content={<ChartTooltipContent nameKey="sentiment" hideLabel />}
+            />
+            <Pie
+              data={chartData}
+              dataKey="articles"
+              nameKey="sentiment"
+              innerRadius={56}
+              outerRadius={78}
+              strokeWidth={4}
+            >
+              <Label
+                content={({ viewBox }) => {
+                  if (!viewBox || !("cx" in viewBox) || !("cy" in viewBox)) return null;
+                  return (
+                    <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
+                      <tspan x={viewBox.cx} y={viewBox.cy} className="fill-foreground text-2xl font-semibold">
+                        {data.total.toLocaleString("id-ID")}
+                      </tspan>
+                      <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 20} className="fill-muted-foreground text-[10px]">
+                        ARTIKEL
+                      </tspan>
+                    </text>
+                  );
+                }}
+              />
+            </Pie>
+            <ChartLegend content={<ChartLegendContent nameKey="sentiment" />} />
+          </PieChart>
+        </ChartContainer>
       ) : (
-        <div className="mt-4 flex h-48 items-center justify-center rounded-md border border-dashed border-gray-300 dark:border-gray-700">
-          <p className="text-sm text-gray-400 dark:text-gray-500">
-            Belum ada data untuk periode {periodLabel.toLowerCase()}
-          </p>
+        <div className="flex h-56 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+          Belum ada data untuk {periodLabel.toLowerCase()}
         </div>
       )}
     </Card>

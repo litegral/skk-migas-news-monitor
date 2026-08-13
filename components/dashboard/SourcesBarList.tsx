@@ -1,9 +1,17 @@
 "use client";
 
-import React from "react";
-import { Card } from "@/components/ui/Card";
-import { BarList } from "@/components/ui/BarList";
+import * as React from "react";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+
 import { AllSourcesModal } from "@/components/dashboard/AllSourcesModal";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
 export interface SourceData {
   name: string;
@@ -11,65 +19,70 @@ export interface SourceData {
 }
 
 interface SourcesBarListProps {
-  /** Top 10 sources + "Lainnya" for bar chart display */
   data: SourceData[];
-  /** All sources for the modal */
   allSourcesData: SourceData[];
 }
 
+const chartConfig = {
+  value: { label: "Artikel", color: "#0f766e" },
+} satisfies ChartConfig;
+
 export function SourcesBarList({ data, allSourcesData }: Readonly<SourcesBarListProps>) {
   const [isModalOpen, setIsModalOpen] = React.useState(false);
-
-  // Separate "Lainnya" from top sources for display
-  const topSources = data.filter((item) => item.name !== "Lainnya");
-  const othersItem = data.find((item) => item.name === "Lainnya");
-
-  const hasData = topSources.length > 0;
+  const chartData = data.filter((item) => item.name !== "Lainnya").slice(0, 8);
+  const othersCount = data.find((item) => item.name === "Lainnya")?.value ?? 0;
 
   return (
     <>
-      <Card>
-        <h2 className="text-sm font-medium text-gray-900 dark:text-gray-50">
-          Sumber Teratas
-        </h2>
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          Artikel berdasarkan sumber
-        </p>
+      <Card className="h-full">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Sumber Teratas</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">Media dengan liputan terbanyak</p>
+          </div>
+          {allSourcesData.length > chartData.length && (
+            <Button variant="ghost" size="sm" onClick={() => setIsModalOpen(true)}>
+              Lihat semua
+            </Button>
+          )}
+        </div>
 
-        {hasData ? (
-          <div className="mt-4">
-            <BarList
-              data={topSources}
-              valueFormatter={(value) => `${value} artikel`}
-              sortOrder="descending"
-            />
-
-            {/* Link to show all sources */}
-            {othersItem && othersItem.value > 0 && (
+        {chartData.length > 0 ? (
+          <div>
+            <ChartContainer config={chartConfig} className="h-52 w-full aspect-auto">
+              <BarChart data={chartData} layout="vertical" margin={{ left: 4, right: 12 }}>
+                <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+                <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
+                <YAxis
+                  dataKey="name"
+                  type="category"
+                  tickLine={false}
+                  axisLine={false}
+                  width={104}
+                  tick={{ fontSize: 11 }}
+                />
+                <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+                <Bar dataKey="value" fill="var(--color-value)" radius={[0, 5, 5, 0]} />
+              </BarChart>
+            </ChartContainer>
+            {othersCount > 0 && (
               <button
                 type="button"
                 onClick={() => setIsModalOpen(true)}
-                className="mt-3 text-xs text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+                className="mt-1 text-xs font-medium text-primary hover:underline"
               >
-                + {othersItem.value} artikel dari sumber lainnya
+                + {othersCount.toLocaleString("id-ID")} artikel dari sumber lain
               </button>
             )}
           </div>
         ) : (
-          <div className="mt-4 flex h-48 items-center justify-center rounded-md border border-dashed border-gray-300 dark:border-gray-700">
-            <p className="text-sm text-gray-400 dark:text-gray-500">
-              Belum ada sumber
-            </p>
+          <div className="flex h-56 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+            Belum ada sumber
           </div>
         )}
       </Card>
 
-      {/* All Sources Modal */}
-      <AllSourcesModal
-        open={isModalOpen}
-        onOpenChange={setIsModalOpen}
-        data={allSourcesData}
-      />
+      <AllSourcesModal open={isModalOpen} onOpenChange={setIsModalOpen} data={allSourcesData} />
     </>
   );
 }

@@ -5,9 +5,9 @@ import { RiAddLine, RiDeleteBinLine, RiCheckLine, RiCloseLine } from "@remixicon
 
 import type { RSSFeedRow } from "@/lib/types/database";
 import { addRSSFeed, updateRSSFeed, deleteRSSFeed } from "@/lib/actions/settings";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { Switch } from "@/components/ui/Switch";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { cx } from "@/lib/utils";
 
 interface RSSFeedManagerProps {

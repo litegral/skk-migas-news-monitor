@@ -215,7 +215,7 @@ const DonutChart = React.forwardRef<HTMLDivElement, DonutChartProps>(
                   content={({ active, payload }) => (
                     <ChartTooltip
                       active={active}
-                      payload={payload as PayloadItem[]}
+                      payload={payload as unknown as PayloadItem[]}
                       valueFormatter={valueFormatter}
                     />
                   )}

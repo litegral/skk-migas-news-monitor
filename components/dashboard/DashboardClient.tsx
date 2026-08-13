@@ -12,7 +12,8 @@ import {
   RiEditLine,
   RiCheckLine,
   RiRefreshLine,
-  RiLoader4Line
+  RiLoader4Line,
+  RiAddLine,
 } from "@remixicon/react";
 
 import type { TopicRow } from "@/lib/types/database";
@@ -34,16 +35,16 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/Select";
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/DropdownMenu";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { cx } from "@/lib/utils";
 
 // Dashboard components
@@ -53,8 +54,9 @@ import { SyncStatusIndicator } from "@/components/dashboard/SyncStatusIndicator"
 import { FailedArticlesReviewModal } from "@/components/dashboard/FailedArticlesReviewModal";
 import { AddArticleModal } from "@/components/news/AddArticleModal";
 import { ArticleFeed } from "@/components/news/ArticleFeed";
-import { Badge } from "@/components/ui/Badge";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SidebarTrigger } from "@/components/dashboard/Sidebar";
 
 interface DashboardClientProps {
   widgets: Record<string, React.ReactNode>;
@@ -67,6 +69,8 @@ interface DashboardClientProps {
   decodePendingCount: number;
   initialArticles: Article[];
   totalArticles: number;
+  initialCategories: string[];
+  initialSources: string[];
 }
 
 export function DashboardClient({
@@ -80,6 +84,8 @@ export function DashboardClient({
   decodePendingCount,
   initialArticles,
   totalArticles,
+  initialCategories,
+  initialSources,
 }: Readonly<DashboardClientProps>) {
   const router = useRouter();
   const [addArticleOpen, setAddArticleOpen] = React.useState(false);
@@ -145,62 +151,20 @@ export function DashboardClient({
 
   return (
     <>
-      {/* Page header */}
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-50 flex items-center gap-2">
-            Dashboard
-            {isPending && <RiLoader4Line className="size-5 animate-spin text-blue-500" />}
-          </h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Pemantauan berita untuk SKK Migas Kalsul.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {failedCount > 0 && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => setFailedReviewOpen(true)}
-                  className={cx(
-                    "inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium",
-                    "text-amber-900 transition-colors hover:bg-amber-100",
-                    "dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100 dark:hover:bg-amber-500/20",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2",
-                    "dark:focus-visible:ring-offset-gray-950",
-                  )}
-                >
-                  <span>Tertunda</span>
-                  <Badge variant="warning" className="tabular-nums">
-                    {failedCount}
-                  </Badge>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-xs">
-                Analisis gagal — klik untuk meninjau dan mengatur sentimen manual
-              </TooltipContent>
-            </Tooltip>
-          )}
-          <SyncStatusIndicator
-            failedCount={failedCount}
-            pendingCount={pendingCount}
-            decodePendingCount={decodePendingCount}
-            totalArticles={totalArticles}
-          />
-        </div>
-      </div>
-
       {/* ═══════════════════════════════════════════════════════════════════════
           SECTION: Ringkasan (Period-dependent data)
           ═══════════════════════════════════════════════════════════════════════ */}
       <section className={cx("transition-opacity duration-300", isPending && "opacity-60")}>
         {/* Section header with settings and period selector */}
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50">
-              Ringkasan
-            </h2>
+            <SidebarTrigger />
+            <div>
+              <h2 className="text-base font-semibold tracking-tight text-slate-950 dark:text-white">
+                Ringkasan Kinerja
+              </h2>
+            </div>
+            {isPending && <RiLoader4Line className="size-4 animate-spin text-blue-500" />}
             {/* Settings dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -221,26 +185,49 @@ export function DashboardClient({
                 {isEditMode ? (
                   <DropdownMenuItem onClick={() => setIsEditMode(false)}>
                     <RiCheckLine className="mr-2 size-4" />
-                    Done Editing
+                    Selesai Mengatur
                   </DropdownMenuItem>
                 ) : (
                   <DropdownMenuItem onClick={() => setIsEditMode(true)}>
                     <RiEditLine className="mr-2 size-4" />
-                    Edit Layout
+                    Atur Tata Letak
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleResetLayout}>
                   <RiRefreshLine className="mr-2 size-4" />
-                  Reset Layout
+                  Reset Tata Letak
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <div className="flex w-full items-center gap-2 sm:w-auto">
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              Periode:
-            </span>
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            {failedCount > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setFailedReviewOpen(true)}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100 dark:hover:bg-amber-500/20"
+                  >
+                    Tertunda
+                    <Badge variant="warning" className="tabular-nums">
+                      {failedCount}
+                    </Badge>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs">
+                  Analisis gagal — klik untuk meninjau dan mengatur sentimen manual
+                </TooltipContent>
+              </Tooltip>
+            )}
+            <SyncStatusIndicator
+              failedCount={failedCount}
+              pendingCount={pendingCount}
+              decodePendingCount={decodePendingCount}
+              totalArticles={totalArticles}
+            />
+            <span className="sr-only">Periode ringkasan</span>
             <Select value={period} onValueChange={(v) => handlePeriodChange(v as DashboardPeriod)} disabled={isPending}>
               <SelectTrigger className="w-28 shrink-0">
                 <SelectValue />
@@ -268,15 +255,15 @@ export function DashboardClient({
       {/* ═══════════════════════════════════════════════════════════════════════
           SECTION: Artikel Terbaru (Independent of period)
           ═══════════════════════════════════════════════════════════════════════ */}
-      <section className="mt-10">
+      <section className="mt-6 border-t border-slate-200/80 pt-5 dark:border-slate-800">
         {/* Section header */}
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-50">
-              Artikel Terbaru
+            <h2 className="text-lg font-semibold tracking-tight text-slate-950 dark:text-white">
+              Liputan Terkini
             </h2>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Berita terbaru dari semua sumber
+            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+              Telusuri, filter, dan tinjau artikel dari seluruh sumber aktif.
             </p>
             <PendingAnalysisNotice
               pendingCount={pendingCount}
@@ -285,10 +272,10 @@ export function DashboardClient({
           </div>
           <Button
             type="button"
-            variant="secondary"
-            className="shrink-0 self-start"
+            className="shrink-0 self-start gap-2"
             onClick={() => setAddArticleOpen(true)}
           >
+            <RiAddLine className="size-4" aria-hidden="true" />
             Tambah artikel
           </Button>
         </div>
@@ -305,12 +292,14 @@ export function DashboardClient({
         />
 
         {/* Article Feed with its own filters */}
-        <Card>
+        <Card className="p-4 sm:p-5">
           <ArticleFeed
             initialArticles={initialArticles}
             totalArticles={totalArticles}
             topicMap={topicMap}
             availableTopics={availableTopics}
+            initialCategories={initialCategories}
+            initialSources={initialSources}
           />
         </Card>
       </section>

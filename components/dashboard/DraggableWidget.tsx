@@ -17,7 +17,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@/components/ui/DropdownMenu";
+} from "@/components/ui/dropdown-menu";
 import { cx } from "@/lib/utils";
 import type { WidgetSize } from "@/lib/types/dashboard-layout";
 import { SIZE_LABELS } from "@/lib/types/dashboard-layout";

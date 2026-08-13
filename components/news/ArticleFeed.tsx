@@ -1,22 +1,23 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   RiFilterLine,
   RiCloseLine,
   RiArrowLeftSLine,
   RiArrowRightSLine,
-  RiLoader4Line
+  RiLoader4Line,
+  RiErrorWarningLine,
 } from "@remixicon/react";
 
 import type { Article, Sentiment } from "@/lib/types/news";
-import { Input } from "@/components/ui/Input";
-import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { MultiSelect } from "@/components/ui/MultiSelect";
 import { ArticleCard } from "./ArticleCard";
 import { ExportButton } from "@/components/dashboard/ExportButton";
 import { cx } from "@/lib/utils";
-import { getFeedArticlesAction, getArticleFilterOptionsAction, type FeedQueryParams } from "@/app/actions/articles";
+import { getFeedArticlesAction, type FeedQueryParams } from "@/app/actions/articles";
 
 interface ArticleFeedProps {
   initialArticles: Article[];
@@ -25,6 +26,8 @@ interface ArticleFeedProps {
   topicMap?: Record<string, string>;
   /** List of all available topic names for filtering. */
   availableTopics?: string[];
+  initialCategories?: string[];
+  initialSources?: string[];
   /** Number of articles per page (default: 10). */
   pageSize?: number;
 }
@@ -39,6 +42,8 @@ export function ArticleFeed({
   totalArticles: initialTotal,
   topicMap = {},
   availableTopics = [],
+  initialCategories = [],
+  initialSources = [],
   pageSize = DEFAULT_PAGE_SIZE,
 }: Readonly<ArticleFeedProps>) {
   const [search, setSearch] = useState("");
@@ -54,8 +59,10 @@ export function ArticleFeed({
   const [articles, setArticles] = useState<Article[]>(initialArticles);
   const [total, setTotal] = useState(initialTotal);
   const [isLoading, setIsLoading] = useState(false);
-  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
-  const [availableSources, setAvailableSources] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const requestSequence = useRef(0);
+  const feedTopRef = useRef<HTMLDivElement>(null);
+  const isFirstFeedEffect = useRef(true);
 
   // Derive unique topics from availableTopics
   const allTopics = useMemo(() => {
@@ -92,47 +99,17 @@ export function ArticleFeed({
     setTotal((prev) => Math.max(0, prev - 1));
   }, []);
 
-  // Reset to page 1 when filters change
   useEffect(() => {
-    setCurrentPage(1);
-  }, [debouncedSearch, sortBy, sentimentFilter, selectedTopics, selectedCategories, selectedSources]);
-
-  // Fetch filter options on mount
-  useEffect(() => {
-    let mounted = true;
-    async function loadOptions() {
-      const res = await getArticleFilterOptionsAction();
-      if (mounted && !res.error) {
-        setAvailableCategories(res.categories);
-        setAvailableSources(res.sources);
-      }
-    }
-    loadOptions();
-    return () => { mounted = false; };
-  }, []);
-
-  // Fetch data
-  const loadData = useCallback(async () => {
-    // Skip if it perfectly matches initial state on first render
-    if (
-      currentPage === 1 &&
-      debouncedSearch === "" &&
-      sortBy === "newest" &&
-      sentimentFilter === "all" &&
-      selectedTopics.length === 0 &&
-      selectedCategories.length === 0 &&
-      selectedSources.length === 0 &&
-      !isLoading // Don't skip if manual refresh needed
-    ) {
-      if (articles !== initialArticles) {
-        setArticles(initialArticles);
-        setTotal(initialTotal);
-      }
+    if (isFirstFeedEffect.current) {
+      isFirstFeedEffect.current = false;
       return;
     }
 
-    setIsLoading(true);
-    try {
+    const requestId = ++requestSequence.current;
+
+    async function loadData() {
+      setIsLoading(true);
+      setLoadError(null);
       const params: FeedQueryParams = {
         page: currentPage,
         limit: pageSize,
@@ -144,25 +121,42 @@ export function ArticleFeed({
         sortBy
       };
       const res = await getFeedArticlesAction(params);
-      if (!res.error) {
+      if (requestId !== requestSequence.current) return;
+
+      if (res.error) {
+        setLoadError("Artikel belum dapat dimuat. Silakan coba lagi.");
+      } else {
         setArticles(res.articles);
         setTotal(res.total);
       }
-    } catch (err) {
-      console.error("Failed to load articles", err);
-    } finally {
       setIsLoading(false);
     }
-  }, [currentPage, debouncedSearch, sortBy, sentimentFilter, selectedTopics, selectedCategories, selectedSources, pageSize, initialArticles, initialTotal]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+    void loadData().catch((error: unknown) => {
+      console.error("Failed to load articles", error);
+      if (requestId === requestSequence.current) {
+        setLoadError("Artikel belum dapat dimuat. Silakan coba lagi.");
+        setIsLoading(false);
+      }
+    });
+  }, [
+    currentPage,
+    debouncedSearch,
+    sortBy,
+    sentimentFilter,
+    selectedTopics,
+    selectedCategories,
+    selectedSources,
+    pageSize,
+    initialArticles,
+    initialTotal,
+  ]);
 
 
   const totalPages = Math.ceil(total / pageSize);
 
   function toggleTopic(topic: string) {
+    setCurrentPage(1);
     setSelectedTopics((prev) =>
       prev.includes(topic)
         ? prev.filter((t) => t !== topic)
@@ -171,13 +165,24 @@ export function ArticleFeed({
   }
 
   function clearTopicFilters() {
+    setCurrentPage(1);
     setSelectedTopics([]);
+  }
+
+  function clearAllFilters() {
+    setCurrentPage(1);
+    setSearch("");
+    setSentimentFilter("all");
+    setSelectedTopics([]);
+    setSelectedCategories([]);
+    setSelectedSources([]);
+    setSortBy("newest");
   }
 
   function goToPage(page: number) {
     if (page >= 1 && page <= totalPages) {
       setCurrentPage(page);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      feedTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
 
@@ -201,30 +206,40 @@ export function ArticleFeed({
     return pages;
   }
 
+  const activeFilterCount =
+    (sentimentFilter !== "all" ? 1 : 0) +
+    selectedTopics.length +
+    selectedCategories.length +
+    selectedSources.length;
+
   return (
-    <div className="flex flex-col gap-6">
+    <div ref={feedTopRef} className="flex scroll-mt-20 flex-col gap-5">
       {/* Search and filter bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="relative flex-1">
           <Input
             type="search"
             placeholder="Cari artikel..."
+            aria-label="Cari artikel"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCurrentPage(1);
+            }}
             className="w-full"
           />
         </div>
-        <div className="flex items-center gap-3">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
           <Button
             variant="secondary"
             onClick={() => setShowFilters(!showFilters)}
             className="gap-2"
           >
             <RiFilterLine className="size-4" />
-            Filters
-            {(sentimentFilter !== "all" || selectedTopics.length > 0 || selectedCategories.length > 0 || selectedSources.length > 0) && (
+            Filter
+            {activeFilterCount > 0 && (
               <span className="ml-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-                {(sentimentFilter !== "all" ? 1 : 0) + selectedTopics.length + selectedCategories.length + selectedSources.length}
+                {activeFilterCount}
               </span>
             )}
           </Button>
@@ -245,15 +260,33 @@ export function ArticleFeed({
 
       {/* Filter options panel */}
       {showFilters && (
-        <div className="flex flex-col gap-4 rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Persempit hasil</p>
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Gabungkan beberapa filter untuk hasil yang lebih spesifik.</p>
+            </div>
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={clearAllFilters}
+                className="shrink-0 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+              >
+                Reset filter
+              </button>
+            )}
+          </div>
           <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
             {/* Sort */}
             <div className="flex items-center gap-2">
-              <label htmlFor="sort" className="text-sm text-gray-600 dark:text-gray-400">Sort:</label>
+              <label htmlFor="sort" className="text-sm text-gray-600 dark:text-gray-400">Urutan:</label>
               <select
                 id="sort"
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as SortOption)}
+                onChange={(e) => {
+                  setSortBy(e.target.value as SortOption);
+                  setCurrentPage(1);
+                }}
                 className="rounded-md border border-gray-300 bg-white py-1 pl-2 pr-8 text-sm dark:border-gray-700 dark:bg-gray-800"
               >
                 <option value="newest">Terbaru dahulu</option>
@@ -263,11 +296,14 @@ export function ArticleFeed({
 
             {/* Sentiment filter */}
             <div className="flex items-center gap-2">
-              <label htmlFor="sentiment" className="text-sm text-gray-600 dark:text-gray-400">Sentiment:</label>
+              <label htmlFor="sentiment" className="text-sm text-gray-600 dark:text-gray-400">Sentimen:</label>
               <select
                 id="sentiment"
                 value={sentimentFilter}
-                onChange={(e) => setSentimentFilter(e.target.value as SentimentFilter)}
+                onChange={(e) => {
+                  setSentimentFilter(e.target.value as SentimentFilter);
+                  setCurrentPage(1);
+                }}
                 className="rounded-md border border-gray-300 bg-white py-1 pl-2 pr-8 text-sm dark:border-gray-700 dark:bg-gray-800"
               >
                 <option value="all">Semua</option>
@@ -278,14 +314,17 @@ export function ArticleFeed({
             </div>
 
             {/* Category filter */}
-            {availableCategories.length > 0 && (
+            {initialCategories.length > 0 && (
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
                 <label className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">Kategori:</label>
                 <div className="w-full min-w-0 sm:w-48">
                   <MultiSelect
-                    options={availableCategories}
+                    options={initialCategories}
                     selected={selectedCategories}
-                    onChange={setSelectedCategories}
+                    onChange={(categories) => {
+                      setSelectedCategories(categories);
+                      setCurrentPage(1);
+                    }}
                     placeholder="Semua Kategori"
                     searchPlaceholder="Cari Kategori..."
                   />
@@ -294,14 +333,17 @@ export function ArticleFeed({
             )}
 
             {/* Source filter */}
-            {availableSources.length > 0 && (
+            {initialSources.length > 0 && (
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
                 <label className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">Sumber:</label>
                 <div className="w-full min-w-0 sm:w-48">
                   <MultiSelect
-                    options={availableSources}
+                    options={initialSources}
                     selected={selectedSources}
-                    onChange={setSelectedSources}
+                    onChange={(sources) => {
+                      setSelectedSources(sources);
+                      setCurrentPage(1);
+                    }}
                     placeholder="Semua Sumber"
                     searchPlaceholder="Cari Sumber..."
                   />
@@ -314,7 +356,7 @@ export function ArticleFeed({
           {allTopics.length > 0 && (
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Topics:</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">Topik:</span>
                 {selectedTopics.length > 0 && (
                   <button
                     type="button"
@@ -353,15 +395,22 @@ export function ArticleFeed({
       )}
 
       {/* Results count */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+      <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+        <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400" aria-live="polite">
           Menampilkan {(currentPage - 1) * pageSize + (articles.length > 0 ? 1 : 0)}-{Math.min(currentPage * pageSize, total)} dari {total} artikel
         </p>
         {isLoading && <RiLoader4Line className="size-4 animate-spin text-blue-500" />}
       </div>
 
+      {loadError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+          <RiErrorWarningLine className="size-4 shrink-0" aria-hidden="true" />
+          {loadError}
+        </div>
+      )}
+
       {/* Article list */}
-      <div className={cx("flex flex-col gap-3 transition-opacity", isLoading && "opacity-60")}>
+      <div className={cx("flex flex-col gap-3 transition-opacity duration-200", isLoading && "pointer-events-none opacity-55")} aria-busy={isLoading}>
         {articles.length > 0 ? (
           articles.map((article) => (
             <ArticleCard

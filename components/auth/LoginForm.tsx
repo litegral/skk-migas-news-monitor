@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { RiMailLine, RiLockLine } from "@remixicon/react";
 
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { Label } from "@/components/ui/Label";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export function LoginForm() {
   const router = useRouter();
@@ -58,7 +58,7 @@ export function LoginForm() {
             type="email"
             autoComplete="email"
             required
-            placeholder="you@example.com"
+            placeholder="nama@perusahaan.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={isLoading}
@@ -110,9 +110,9 @@ export function LoginForm() {
         type="submit"
         className="w-full"
         isLoading={isLoading}
-        loadingText="Sign in..."
+        loadingText="Memproses..."
       >
-        Sign in
+        Masuk
       </Button>
     </form>
   );

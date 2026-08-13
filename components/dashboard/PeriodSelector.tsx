@@ -6,7 +6,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/Select";
+} from "@/components/ui/select";
 import type { DashboardPeriod } from "@/lib/types/dashboard";
 import { PERIOD_OPTIONS } from "@/lib/types/dashboard";
 

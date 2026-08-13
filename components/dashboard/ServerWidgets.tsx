@@ -11,8 +11,8 @@ import { SentimentChart } from "@/components/dashboard/SentimentChart";
 import { SentimentPieChart } from "@/components/dashboard/SentimentPieChart";
 import { SourcesBarList } from "@/components/dashboard/SourcesBarList";
 import { CategoryChart } from "@/components/dashboard/CategoryChart";
-import { Card } from "@/components/ui/Card";
-import { cx } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // ---------------------------------------------------------------------------
 // Skeletons
@@ -20,14 +20,13 @@ import { cx } from "@/lib/utils";
 
 function KPISkeleton() {
     return (
-        <Card className="flex h-full animate-pulse flex-col justify-between p-6">
-            <div className="flex items-start justify-between">
-                <div className="h-5 w-24 rounded bg-gray-200 dark:bg-gray-800" />
-                <div className="size-10 rounded-full bg-gray-200 dark:bg-gray-800" />
-            </div>
-            <div className="mt-4 flex flex-col gap-2">
-                <div className="h-8 w-16 rounded bg-gray-200 dark:bg-gray-800" />
-                <div className="h-4 w-32 rounded bg-gray-200 dark:bg-gray-800" />
+        <Card className="h-full p-4 sm:p-5" aria-label="Memuat ringkasan">
+            <div className="flex items-center gap-3">
+                <Skeleton className="size-10 shrink-0 rounded-xl" />
+                <div className="flex-1 space-y-2">
+                    <Skeleton className="h-3 w-24" />
+                    <Skeleton className="h-7 w-16" />
+                </div>
             </div>
         </Card>
     );
@@ -35,10 +34,12 @@ function KPISkeleton() {
 
 function ChartSkeleton() {
     return (
-        <Card className="flex h-full min-h-[300px] animate-pulse flex-col p-6">
-            <div className="h-5 w-32 rounded bg-gray-200 dark:bg-gray-800" />
-            <div className="mt-2 h-4 w-48 rounded bg-gray-200 dark:bg-gray-800" />
-            <div className="mt-6 flex-1 rounded bg-gray-100 dark:bg-gray-800/50" />
+        <Card className="h-full min-h-[284px]" aria-label="Memuat visualisasi">
+            <div className="space-y-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-48 max-w-full" />
+            </div>
+            <Skeleton className="h-48 w-full rounded-lg" />
         </Card>
     );
 }

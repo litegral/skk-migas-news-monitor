@@ -7,7 +7,7 @@ import {
   RiEmotionNormalLine,
 } from "@remixicon/react";
 
-import { Card } from "@/components/ui/Card";
+import { Card } from "@/components/ui/card";
 import { cx } from "@/lib/utils";
 import type { DashboardPeriod } from "@/lib/types/dashboard";
 import { getPeriodLabel } from "@/lib/types/dashboard";

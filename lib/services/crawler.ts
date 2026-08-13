@@ -233,36 +233,6 @@ export interface CrawlResult {
 }
 
 /**
- * Python code for resource-blocking hooks.
- * Blocks images, fonts, stylesheets, media, and tracking scripts
- * to save ~30-50% memory per page on the 4GB VPS.
- *
- * Hook: on_page_context_created — fires after browser context is created
- * but before page navigation. Routes are set on `context` (not `page`)
- * so they apply to all frames and popups within the context.
- */
-const RESOURCE_BLOCKING_HOOK = `
-async def on_page_context_created(page, context, **kwargs):
-    async def block_resources(route, request):
-        blocked = ["image", "media", "font", "stylesheet"]
-        if request.resource_type in blocked:
-            await route.abort()
-            return
-        url = request.url.lower()
-        blocked_domains = [
-            "google-analytics.com", "googletagmanager.com",
-            "facebook.net", "doubleclick.net", "adservice.google",
-            "analytics.", "tracker.", "pixel.", "ads."
-        ]
-        for domain in blocked_domains:
-            if domain in url:
-                await route.abort()
-                return
-        await route.continue_()
-    await context.route("**/*", block_resources)
-`;
-
-/**
  * Build the /crawl request body with full BrowserConfig + CrawlerRunConfig.
  * Optimized for anti-bot bypass on Indonesian news sites (detik, kompas, tribun, etc.)
  * and memory-constrained 4GB VPS.

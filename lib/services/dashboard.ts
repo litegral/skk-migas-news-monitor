@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { format, eachDayOfInterval, startOfDay } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
+import { getSharedUserId } from "@/lib/config/sharedData";
 import { getPeriodCutoffDate, type DashboardPeriod } from "@/lib/types/dashboard";
 import type { ArticleRow } from "@/lib/types/database";
 import type { Article } from "@/lib/types/news";
@@ -96,6 +97,46 @@ export const getActiveTopics = cache(async () => {
 
   const availableTopics = Object.values(topicMap).sort();
   return { topicMap, activeTopicIds, availableTopics };
+});
+
+/**
+ * Feed filter metadata, cached per server render so the dashboard can hydrate
+ * with complete controls instead of issuing a second client-side request.
+ */
+export const getArticleFilterOptions = cache(async (): Promise<{
+  categories: string[];
+  sources: string[];
+}> => {
+  const supabase = await createClient();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  if (!claimsData?.claims?.sub) {
+    return { categories: [], sources: [] };
+  }
+
+  const { data, error } = await supabase
+    .from("articles")
+    .select("categories, source_name")
+    .eq("user_id", getSharedUserId())
+    .eq("ai_processed", true)
+    .eq("is_hidden", false);
+
+  if (error) {
+    console.error("Error fetching article filter options:", error);
+    return { categories: [], sources: [] };
+  }
+
+  const categories = new Set<string>();
+  const sources = new Set<string>();
+
+  for (const row of data ?? []) {
+    if (row.source_name) sources.add(row.source_name);
+    for (const category of row.categories ?? []) categories.add(category);
+  }
+
+  return {
+    categories: Array.from(categories).sort(),
+    sources: Array.from(sources).sort(),
+  };
 });
 
 /** PostgREST default max rows per request; paginate past this in getAggregationsRawData. */
@@ -296,24 +337,24 @@ export const getPaginatedArticles = cache(async (
     ? [topicFilterId]
     : activeTopicIds;
 
-  // First fetch total count for pagination
-  const { count } = await supabase
-    .from("articles")
-    .select("id", { count: 'exact', head: true })
-    .eq("is_hidden", false)
-    .overlaps("matched_topic_ids", filterTopics);
-
   const start = (page - 1) * limit;
   const end = start + limit - 1;
 
-  // Then fetch the paginated slice
-  const { data, error } = await supabase
-    .from("articles")
-    .select(dashboardArticleSelect)
-    .eq("is_hidden", false)
-    .overlaps("matched_topic_ids", filterTopics)
-    .order("published_at", { ascending: false })
-    .range(start, end);
+  const [{ count }, { data, error }] = await Promise.all([
+    supabase
+      .from("articles")
+      .select("id", { count: "exact", head: true })
+      .eq("is_hidden", false)
+      .overlaps("matched_topic_ids", filterTopics),
+    supabase
+      .from("articles")
+      .select(dashboardArticleSelect)
+      .eq("is_hidden", false)
+      .overlaps("matched_topic_ids", filterTopics)
+      .order("published_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(start, end),
+  ]);
 
   if (error) {
     console.error("Error fetching paginated articles:", error);

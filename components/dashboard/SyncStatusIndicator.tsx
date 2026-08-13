@@ -25,8 +25,8 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/Popover";
-import { Button } from "@/components/ui/Button";
+} from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
 import { useAutoFetch } from "@/contexts/AutoFetchContext";
 import { useAnalysis } from "@/contexts/AnalysisContext";
 import {

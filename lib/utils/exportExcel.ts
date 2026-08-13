@@ -11,7 +11,7 @@
  * - Topics column showing matched topic names
  */
 
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import { format } from "date-fns";
 import type { Article } from "@/lib/types/news";
 
@@ -149,6 +149,9 @@ export async function exportArticlesToExcel(
   articles: Article[],
   options: ExportOptions = {}
 ): Promise<void> {
+  // ExcelJS is large and only needed after a user explicitly exports. Loading it
+  // here keeps the dashboard's initial client bundle lean and isolates failures.
+  const { default: ExcelJSRuntime } = await import("exceljs");
   const {
     filename = `berita-skk-migas-${format(new Date(), "yyyy-MM-dd")}`,
     sheetName = "Berita",
@@ -156,7 +159,7 @@ export async function exportArticlesToExcel(
   } = options;
 
   // Create workbook and worksheet
-  const workbook = new ExcelJS.Workbook();
+  const workbook = new ExcelJSRuntime.Workbook();
   workbook.creator = "SKK Migas Kalsul News Monitor";
   workbook.created = new Date();
 
@@ -292,7 +295,7 @@ export async function exportArticlesToExcel(
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /**

@@ -7,7 +7,7 @@ import { RiArticleLine } from "@remixicon/react";
 import { addCustomArticleAction } from "@/app/actions/articles";
 import type { TopicRow } from "@/lib/types/database";
 import type { Sentiment } from "@/lib/types/news";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -16,9 +16,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogCloseButton,
-} from "@/components/ui/Dialog";
-import { Input } from "@/components/ui/Input";
-import { Label } from "@/components/ui/Label";
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { cx, focusInput } from "@/lib/utils";
 
 interface AddArticleModalProps {

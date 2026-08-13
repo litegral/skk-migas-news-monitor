@@ -5,8 +5,8 @@ import React from "react";
 import { SidebarProvider, useSidebar } from "@/lib/contexts/SidebarContext";
 import { AnalysisProvider } from "@/contexts/AnalysisContext";
 import { AutoFetchProvider } from "@/contexts/AutoFetchContext";
-import { TooltipProvider } from "@/components/ui/Tooltip";
-import { Sidebar, MobileHeader, SidebarExpandButton } from "./Sidebar";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Sidebar, MobileHeader } from "./Sidebar";
 import { cx } from "@/lib/utils";
 
 interface DashboardShellProps {
@@ -18,19 +18,16 @@ function DashboardShellInner({ children }: Readonly<{ children: React.ReactNode 
   const { isCollapsed } = useSidebar();
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="min-h-screen bg-background">
       {/* Desktop sidebar -- fixed left, hidden when collapsed */}
       <aside
         className={cx(
-          "fixed inset-y-0 left-0 z-30 hidden w-60 border-r border-gray-200 bg-white transition-transform duration-300 ease-in-out lg:block dark:border-gray-800 dark:bg-gray-950",
+          "fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-200/80 bg-white/95 transition-transform duration-300 ease-out lg:block dark:border-slate-800 dark:bg-[#0a111d]/95",
           isCollapsed && "-translate-x-full",
         )}
       >
         <Sidebar className="h-full" />
       </aside>
-
-      {/* Floating expand button when sidebar is collapsed */}
-      <SidebarExpandButton />
 
       {/* Mobile header */}
       <MobileHeader />
@@ -39,10 +36,10 @@ function DashboardShellInner({ children }: Readonly<{ children: React.ReactNode 
       <main
         className={cx(
           "transition-[padding] duration-300 ease-in-out",
-          isCollapsed ? "lg:pl-0" : "lg:pl-60",
+          isCollapsed ? "lg:pl-0" : "lg:pl-64",
         )}
       >
-        <div className="mx-auto min-w-0 max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto min-w-0 max-w-[1440px] px-4 py-5 sm:px-6 sm:py-7 lg:px-8 xl:px-10">
           {children}
         </div>
       </main>
