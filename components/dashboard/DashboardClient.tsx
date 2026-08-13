@@ -137,7 +137,8 @@ export function DashboardClient({
         "sentiment-timeline": "sentimentTimeline",
         "sentiment-pie": "sentimentPie",
         "sources": "sources",
-        "categories": "categories"
+        "categories": "categories",
+        "topic-watch": "topicWatch"
       };
 
       const key = mapping[id];
@@ -276,7 +277,7 @@ export function DashboardClient({
             onClick={() => setAddArticleOpen(true)}
           >
             <RiAddLine className="size-4" aria-hidden="true" />
-            Tambah artikel
+            Tambah artikel secara manual
           </Button>
         </div>
 
@@ -294,6 +295,7 @@ export function DashboardClient({
         {/* Article Feed with its own filters */}
         <Card className="p-4 sm:p-5">
           <ArticleFeed
+            key={searchParams.toString()}
             initialArticles={initialArticles}
             totalArticles={totalArticles}
             topicMap={topicMap}

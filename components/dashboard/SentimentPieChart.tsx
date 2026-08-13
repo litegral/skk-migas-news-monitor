@@ -61,14 +61,26 @@ export function SentimentPieChart({ data, period }: Readonly<SentimentPieChartPr
                 content={({ viewBox }) => {
                   if (!viewBox || !("cx" in viewBox) || !("cy" in viewBox)) return null;
                   return (
-                    <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
-                      <tspan x={viewBox.cx} y={viewBox.cy} className="fill-foreground text-2xl font-semibold">
+                    <g>
+                      <text
+                        x={viewBox.cx}
+                        y={viewBox.cy}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        className="fill-foreground text-2xl font-semibold"
+                      >
                         {data.total.toLocaleString("id-ID")}
-                      </tspan>
-                      <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 20} className="fill-muted-foreground text-[10px]">
+                      </text>
+                      <text
+                        x={viewBox.cx}
+                        y={(viewBox.cy ?? 0) + 28}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        className="fill-muted-foreground text-[10px]"
+                      >
                         ARTIKEL
-                      </tspan>
-                    </text>
+                      </text>
+                    </g>
                   );
                 }}
               />

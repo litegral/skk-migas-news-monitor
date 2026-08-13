@@ -1,8 +1,21 @@
 import { cache } from "react";
-import { format, eachDayOfInterval, startOfDay } from "date-fns";
+import {
+  eachDayOfInterval,
+  eachHourOfInterval,
+  format,
+  startOfDay,
+  startOfHour,
+  subDays,
+} from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import { getSharedUserId } from "@/lib/config/sharedData";
-import { getPeriodCutoffDate, type DashboardPeriod } from "@/lib/types/dashboard";
+import {
+  getPeriodCutoffDate,
+  PERIOD_OPTIONS,
+  type DashboardPeriod,
+  type KPIComparisonData,
+  type TopicWatchInsight,
+} from "@/lib/types/dashboard";
 import type { ArticleRow } from "@/lib/types/database";
 import type { Article } from "@/lib/types/news";
 import type {
@@ -143,7 +156,7 @@ export const getArticleFilterOptions = cache(async (): Promise<{
 const AGGREGATION_PAGE_SIZE = 1000;
 
 const aggregationSelect =
-  "id, published_at, sentiment, source_name, categories, ai_processed, ai_error, url_decoded, decode_failed";
+  "id, published_at, sentiment, source_name, categories, matched_topic_ids, ai_processed, ai_error, url_decoded, decode_failed";
 
 type DashboardAggregationRow = Pick<
   ArticleRow,
@@ -152,6 +165,7 @@ type DashboardAggregationRow = Pick<
   | "sentiment"
   | "source_name"
   | "categories"
+  | "matched_topic_ids"
   | "ai_processed"
   | "ai_error"
   | "url_decoded"
@@ -200,6 +214,160 @@ export const getAggregationsRawData = cache(async (period: DashboardPeriod) => {
   }
 
   return all;
+});
+
+function calculateChangePercent(current: number, previous: number): number | null {
+  if (previous === 0) return current === 0 ? 0 : null;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+const getPreviousPeriodRows = cache(async (
+  period: DashboardPeriod,
+): Promise<DashboardAggregationRow[]> => {
+  const days = PERIOD_OPTIONS.find((option) => option.value === period)?.days ?? null;
+  if (days === null) return [];
+
+  const supabase = await createClient();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  if (!claimsData?.claims?.sub) return [];
+
+  const { activeTopicIds } = await getActiveTopics();
+  if (activeTopicIds.length === 0) return [];
+
+  const currentStart = getPeriodCutoffDate(period);
+  if (!currentStart) return [];
+  const previousStart = subDays(currentStart, days);
+  const previousEnd = new Date(currentStart.getTime() - 1);
+  const rows: DashboardAggregationRow[] = [];
+  let offset = 0;
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from("articles")
+      .select(aggregationSelect)
+      .eq("is_hidden", false)
+      .overlaps("matched_topic_ids", activeTopicIds)
+      .gte("published_at", previousStart.toISOString())
+      .lte("published_at", previousEnd.toISOString())
+      .range(offset, offset + AGGREGATION_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error("Error fetching previous-period KPI data:", error);
+      return [];
+    }
+
+    const page = (data ?? []) as DashboardAggregationRow[];
+    rows.push(...page);
+    if (page.length < AGGREGATION_PAGE_SIZE) break;
+    offset += AGGREGATION_PAGE_SIZE;
+  }
+
+  return rows;
+});
+
+export const getKPIComparisons = cache(async (
+  period: DashboardPeriod,
+): Promise<KPIComparisonData> => {
+  const [currentRows, previousRows] = await Promise.all([
+    getAggregationsRawData(period),
+    getPreviousPeriodRows(period),
+  ]);
+  const hasPreviousPeriod = period !== "all";
+
+  const countSentiment = (rows: DashboardAggregationRow[], sentiment: string) =>
+    rows.filter((row) => row.ai_processed && row.sentiment === sentiment).length;
+
+  const values = {
+    total: [currentRows.length, previousRows.length],
+    positive: [countSentiment(currentRows, "positive"), countSentiment(previousRows, "positive")],
+    negative: [countSentiment(currentRows, "negative"), countSentiment(previousRows, "negative")],
+    neutral: [countSentiment(currentRows, "neutral"), countSentiment(previousRows, "neutral")],
+  } as const;
+
+  const comparison = (value: number, previous: number) => ({
+    value,
+    changePercent: hasPreviousPeriod ? calculateChangePercent(value, previous) : null,
+  });
+
+  return {
+    total: comparison(...values.total),
+    positive: comparison(...values.positive),
+    negative: comparison(...values.negative),
+    neutral: comparison(...values.neutral),
+    hasPreviousPeriod,
+  };
+});
+
+interface TopicAccumulator {
+  articles: number;
+  analyzed: number;
+  negative: number;
+}
+
+function aggregateTopics(rows: DashboardAggregationRow[]): Map<string, TopicAccumulator> {
+  const topics = new Map<string, TopicAccumulator>();
+
+  for (const row of rows) {
+    for (const topicId of row.matched_topic_ids ?? []) {
+      const value = topics.get(topicId) ?? { articles: 0, analyzed: 0, negative: 0 };
+      value.articles++;
+      if (row.ai_processed && row.sentiment) {
+        value.analyzed++;
+        if (row.sentiment === "negative") value.negative++;
+      }
+      topics.set(topicId, value);
+    }
+  }
+
+  return topics;
+}
+
+/**
+ * Ranks configured topics for shared-monitor visibility. The score is explicit:
+ * status priority, negative share, growth, then current article volume.
+ */
+export const getTopicWatchInsights = cache(async (
+  period: DashboardPeriod,
+): Promise<TopicWatchInsight[]> => {
+  const [{ topicMap }, currentRows, previousRows] = await Promise.all([
+    getActiveTopics(),
+    getAggregationsRawData(period),
+    getPreviousPeriodRows(period),
+  ]);
+  const currentTopics = aggregateTopics(currentRows);
+  const previousTopics = aggregateTopics(previousRows);
+
+  return Array.from(currentTopics.entries())
+    .map(([id, current]) => {
+      const previousArticles = previousTopics.get(id)?.articles ?? 0;
+      const changePercent = period === "all"
+        ? null
+        : calculateChangePercent(current.articles, previousArticles);
+      const negativeShare = current.analyzed > 0
+        ? Math.round((current.negative / current.analyzed) * 100)
+        : 0;
+      const isPriority = current.articles >= 2 && negativeShare >= 40;
+      const isRising = period !== "all" && current.articles >= 2 &&
+        (changePercent === null ? previousArticles === 0 : changePercent >= 50);
+      const status = isPriority ? "priority" : isRising ? "rising" : "stable";
+
+      return {
+        id,
+        name: topicMap[id] ?? "Topik tanpa nama",
+        articles: current.articles,
+        negativeShare,
+        changePercent,
+        status,
+      } satisfies TopicWatchInsight;
+    })
+    .sort((a, b) => {
+      const statusWeight = { priority: 3, rising: 2, stable: 1 } as const;
+      return statusWeight[b.status] - statusWeight[a.status] ||
+        b.negativeShare - a.negativeShare ||
+        (b.changePercent ?? 0) - (a.changePercent ?? 0) ||
+        b.articles - a.articles;
+    })
+    .slice(0, 5);
 });
 
 export const getDashboardKPIs = cache(async (period: DashboardPeriod): Promise<KPIData> => {
@@ -252,26 +420,32 @@ export const getSentimentAggregations = cache(async (period: DashboardPeriod) =>
     total: successfullyAnalyzed.length,
   };
 
-  const sentimentByDay = new Map<string, { Positif: number; Netral: number; Negatif: number }>();
+  const isHourly = period === "24h";
+  const sentimentByBucket = new Map<string, { Positif: number; Netral: number; Negatif: number }>();
   for (const article of successfullyAnalyzed) {
     if (!article.published_at) continue;
-    const day = format(new Date(article.published_at), "MMM d");
-    const existing = sentimentByDay.get(day) || { Positif: 0, Netral: 0, Negatif: 0 };
+    const bucketKey = format(
+      new Date(article.published_at),
+      isHourly ? "yyyy-MM-dd HH" : "MMM d",
+    );
+    const existing = sentimentByBucket.get(bucketKey) || { Positif: 0, Netral: 0, Negatif: 0 };
     if (article.sentiment === "positive") existing.Positif++;
     else if (article.sentiment === "neutral") existing.Netral++;
     else if (article.sentiment === "negative") existing.Negatif++;
-    sentimentByDay.set(day, existing);
+    sentimentByBucket.set(bucketKey, existing);
   }
 
   const today = startOfDay(new Date());
   const startDate = cutoffDate ? startOfDay(cutoffDate) : today;
-  const allDatesInRange = eachDayOfInterval({ start: startDate, end: today });
+  const allDatesInRange = isHourly && cutoffDate
+    ? eachHourOfInterval({ start: startOfHour(cutoffDate), end: startOfHour(new Date()) })
+    : eachDayOfInterval({ start: startDate, end: today });
 
   const sentimentData: SentimentDataPoint[] = allDatesInRange.map((date) => {
-    const dayKey = format(date, "MMM d");
-    const existing = sentimentByDay.get(dayKey);
+    const bucketKey = format(date, isHourly ? "yyyy-MM-dd HH" : "MMM d");
+    const existing = sentimentByBucket.get(bucketKey);
     return {
-      date: dayKey,
+      date: format(date, isHourly ? "HH:mm" : "MMM d"),
       Positif: existing?.Positif ?? 0,
       Netral: existing?.Netral ?? 0,
       Negatif: existing?.Negatif ?? 0,

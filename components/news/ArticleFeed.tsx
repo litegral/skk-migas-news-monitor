@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   RiFilterLine,
   RiCloseLine,
@@ -46,23 +47,37 @@ export function ArticleFeed({
   initialSources = [],
   pageSize = DEFAULT_PAGE_SIZE,
 }: Readonly<ArticleFeedProps>) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const sentimentParam = searchParams.get("feedSentiment");
+  const initialSentiment: SentimentFilter =
+    sentimentParam === "positive" || sentimentParam === "neutral" || sentimentParam === "negative"
+      ? sentimentParam
+      : "all";
+  const drilldownDateFrom = searchParams.get("feedFrom");
+  const drilldownDateTo = searchParams.get("feedTo");
+  const drilldownTopic = searchParams.get("feedTopic");
+  const hasKPIDrilldown = initialSentiment !== "all" || Boolean(drilldownDateFrom || drilldownTopic);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("newest");
-  const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>("all");
-  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>(initialSentiment);
+  const [selectedTopics, setSelectedTopics] = useState<string[]>(
+    drilldownTopic ? [drilldownTopic] : [],
+  );
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(hasKPIDrilldown);
   const [currentPage, setCurrentPage] = useState(1);
 
   const [articles, setArticles] = useState<Article[]>(initialArticles);
   const [total, setTotal] = useState(initialTotal);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(hasKPIDrilldown);
   const [loadError, setLoadError] = useState<string | null>(null);
   const requestSequence = useRef(0);
   const feedTopRef = useRef<HTMLDivElement>(null);
-  const isFirstFeedEffect = useRef(true);
+  const isFirstFeedEffect = useRef(!hasKPIDrilldown);
 
   // Derive unique topics from availableTopics
   const allTopics = useMemo(() => {
@@ -118,7 +133,9 @@ export function ArticleFeed({
         topics: selectedTopics,
         categories: selectedCategories,
         sources: selectedSources,
-        sortBy
+        sortBy,
+        dateFrom: drilldownDateFrom,
+        dateTo: drilldownDateTo,
       };
       const res = await getFeedArticlesAction(params);
       if (requestId !== requestSequence.current) return;
@@ -150,6 +167,8 @@ export function ArticleFeed({
     pageSize,
     initialArticles,
     initialTotal,
+    drilldownDateFrom,
+    drilldownDateTo,
   ]);
 
 
@@ -177,6 +196,9 @@ export function ArticleFeed({
     setSelectedCategories([]);
     setSelectedSources([]);
     setSortBy("newest");
+    const params = new URLSearchParams(searchParams.toString());
+    for (const key of ["feedSentiment", "feedTopic", "feedFrom", "feedTo"]) params.delete(key);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
   function goToPage(page: number) {
@@ -210,10 +232,11 @@ export function ArticleFeed({
     (sentimentFilter !== "all" ? 1 : 0) +
     selectedTopics.length +
     selectedCategories.length +
-    selectedSources.length;
+    selectedSources.length +
+    (drilldownDateFrom ? 1 : 0);
 
   return (
-    <div ref={feedTopRef} className="flex scroll-mt-20 flex-col gap-5">
+    <div id="articles" ref={feedTopRef} className="flex scroll-mt-20 flex-col gap-5">
       {/* Search and filter bar */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="relative flex-1">
@@ -253,6 +276,8 @@ export function ArticleFeed({
               categories: selectedCategories,
               sources: selectedSources,
               sortBy,
+              dateFrom: drilldownDateFrom,
+              dateTo: drilldownDateTo,
             }}
           />
         </div>

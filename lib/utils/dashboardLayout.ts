@@ -8,6 +8,7 @@ import type { DashboardLayout, WidgetConfig, WidgetId } from "@/lib/types/dashbo
 import { WIDGET_IDS } from "@/lib/types/dashboard-layout";
 
 const STORAGE_KEY = "skkmigas-dashboard-layout";
+const CATEGORY_WIDTH_MIGRATION_KEY = "skkmigas-dashboard-category-width-v1";
 
 /** Default widget layout */
 export const DEFAULT_LAYOUT: DashboardLayout = {
@@ -19,7 +20,8 @@ export const DEFAULT_LAYOUT: DashboardLayout = {
     { id: "sentiment-timeline", size: "lg" },
     { id: "sentiment-pie", size: "md" },
     { id: "sources", size: "md" },
-    { id: "categories", size: "lg" },
+    { id: "categories", size: "md" },
+    { id: "topic-watch", size: "md" },
   ],
 };
 
@@ -60,6 +62,7 @@ export function loadDashboardLayout(): DashboardLayout {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) {
+      localStorage.setItem(CATEGORY_WIDTH_MIGRATION_KEY, "1");
       return DEFAULT_LAYOUT;
     }
 
@@ -68,7 +71,21 @@ export function loadDashboardLayout(): DashboardLayout {
       return DEFAULT_LAYOUT;
     }
 
-    return validateLayout(parsed);
+    const validated = validateLayout(parsed);
+
+    // Apply the denser monitor layout once without preventing later user resizing.
+    if (!localStorage.getItem(CATEGORY_WIDTH_MIGRATION_KEY)) {
+      const migrated = {
+        widgets: validated.widgets.map((widget) =>
+          widget.id === "categories" ? { ...widget, size: "md" as const } : widget,
+        ),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+      localStorage.setItem(CATEGORY_WIDTH_MIGRATION_KEY, "1");
+      return migrated;
+    }
+
+    return validated;
   } catch {
     return DEFAULT_LAYOUT;
   }

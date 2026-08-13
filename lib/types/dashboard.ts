@@ -14,6 +14,27 @@ export interface KPIData {
   lastUpdated: string | null;
 }
 
+/** Current KPI values plus percentage change from the immediately preceding period. */
+export interface KPIComparisonData {
+  total: { value: number; changePercent: number | null };
+  positive: { value: number; changePercent: number | null };
+  negative: { value: number; changePercent: number | null };
+  neutral: { value: number; changePercent: number | null };
+  hasPreviousPeriod: boolean;
+}
+
+export type TopicWatchStatus = "priority" | "rising" | "stable";
+
+/** Ranked topic signal derived from article volume and analyzed sentiment. */
+export interface TopicWatchInsight {
+  id: string;
+  name: string;
+  articles: number;
+  negativeShare: number;
+  changePercent: number | null;
+  status: TopicWatchStatus;
+}
+
 /** Sentiment data point for charts */
 export interface SentimentDataPoint {
   date: string;
@@ -43,7 +64,7 @@ export interface SentimentPieData {
 }
 
 /** Period options for filtering dashboard data */
-export type DashboardPeriod = "7d" | "1m" | "3m" | "6m" | "1y" | "all";
+export type DashboardPeriod = "24h" | "7d" | "1m" | "3m" | "6m" | "1y" | "all";
 
 /** Period option for display */
 export interface PeriodOption {
@@ -54,6 +75,7 @@ export interface PeriodOption {
 
 /** Available period options */
 export const PERIOD_OPTIONS: PeriodOption[] = [
+  { value: "24h", label: "24 Jam", days: 1 },
   { value: "7d", label: "7 Hari", days: 7 },
   { value: "1m", label: "1 Bulan", days: 30 },
   { value: "3m", label: "3 Bulan", days: 90 },

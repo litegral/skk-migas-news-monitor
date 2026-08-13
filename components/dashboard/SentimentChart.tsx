@@ -52,7 +52,7 @@ export function SentimentChart({ data, period }: Readonly<SentimentChartProps>) 
 
       {data.length > 0 ? (
         <ChartContainer config={chartConfig} className="h-56 w-full aspect-auto">
-          <AreaChart data={data} margin={{ left: -20, right: 8, top: 8 }}>
+          <AreaChart data={data} margin={{ left: 4, right: 8, top: 8 }}>
             <defs>
               {Object.entries(chartConfig).map(([key, config]) => (
                 <linearGradient key={key} id={`fill-${key}`} x1="0" y1="0" x2="0" y2="1">
@@ -63,7 +63,13 @@ export function SentimentChart({ data, period }: Readonly<SentimentChartProps>) 
             </defs>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis dataKey="date" tickLine={false} axisLine={false} minTickGap={24} />
-            <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+            <YAxis
+              allowDecimals={false}
+              tickLine={false}
+              axisLine={false}
+              width={36}
+              tickMargin={8}
+            />
             <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
             <ChartLegend content={<ChartLegendContent />} />
             {Object.entries(chartConfig).map(([key, config]) => (

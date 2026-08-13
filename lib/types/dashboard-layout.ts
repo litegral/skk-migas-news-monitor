@@ -29,6 +29,7 @@ export const WIDGET_IDS = [
   "sentiment-pie",
   "sources",
   "categories",
+  "topic-watch",
 ] as const;
 
 export type WidgetId = (typeof WIDGET_IDS)[number];
@@ -43,6 +44,7 @@ export const WIDGET_NAMES: Record<WidgetId, string> = {
   "sentiment-pie": "Distribusi Sentimen",
   "sources": "Sumber Teratas",
   "categories": "Kategori",
+  "topic-watch": "Topik Perlu Dipantau",
 };
 
 /** Size labels for resize menu */

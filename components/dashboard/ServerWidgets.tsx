@@ -1,8 +1,9 @@
 import React, { Suspense } from "react";
 import {
-    getDashboardKPIs,
+    getKPIComparisons,
     getSentimentAggregations,
-    getSourcesAndCategories
+    getSourcesAndCategories,
+    getTopicWatchInsights,
 } from "@/lib/services/dashboard";
 import type { DashboardPeriod } from "@/lib/types/dashboard";
 
@@ -11,6 +12,7 @@ import { SentimentChart } from "@/components/dashboard/SentimentChart";
 import { SentimentPieChart } from "@/components/dashboard/SentimentPieChart";
 import { SourcesBarList } from "@/components/dashboard/SourcesBarList";
 import { CategoryChart } from "@/components/dashboard/CategoryChart";
+import { TopicWatchPanel } from "@/components/dashboard/TopicWatchPanel";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -49,23 +51,23 @@ function ChartSkeleton() {
 // ---------------------------------------------------------------------------
 
 async function KPITotalServer({ period }: { period: DashboardPeriod }) {
-    const kpis = await getDashboardKPIs(period);
-    return <KPICard type="total" value={kpis.totalArticles} period={period} />;
+    const data = await getKPIComparisons(period);
+    return <KPICard type="total" {...data.total} period={period} hasPreviousPeriod={data.hasPreviousPeriod} />;
 }
 
 async function KPIPositiveServer({ period }: { period: DashboardPeriod }) {
-    const { sentimentPieData } = await getSentimentAggregations(period);
-    return <KPICard type="positive" value={sentimentPieData.positive} period={period} />;
+    const data = await getKPIComparisons(period);
+    return <KPICard type="positive" {...data.positive} period={period} hasPreviousPeriod={data.hasPreviousPeriod} />;
 }
 
 async function KPINegativeServer({ period }: { period: DashboardPeriod }) {
-    const { sentimentPieData } = await getSentimentAggregations(period);
-    return <KPICard type="negative" value={sentimentPieData.negative} period={period} />;
+    const data = await getKPIComparisons(period);
+    return <KPICard type="negative" {...data.negative} period={period} hasPreviousPeriod={data.hasPreviousPeriod} />;
 }
 
 async function KPINeutralServer({ period }: { period: DashboardPeriod }) {
-    const { sentimentPieData } = await getSentimentAggregations(period);
-    return <KPICard type="neutral" value={sentimentPieData.neutral} period={period} />;
+    const data = await getKPIComparisons(period);
+    return <KPICard type="neutral" {...data.neutral} period={period} hasPreviousPeriod={data.hasPreviousPeriod} />;
 }
 
 async function SentimentTimelineServer({ period }: { period: DashboardPeriod }) {
@@ -86,6 +88,11 @@ async function SourcesServer({ period }: { period: DashboardPeriod }) {
 async function CategoriesServer({ period }: { period: DashboardPeriod }) {
     const { categoryData } = await getSourcesAndCategories(period);
     return <CategoryChart data={categoryData} />;
+}
+
+async function TopicWatchServer({ period }: { period: DashboardPeriod }) {
+    const data = await getTopicWatchInsights(period);
+    return <TopicWatchPanel data={data} period={period} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +139,11 @@ export function DashboardWidgets({ period }: { period: DashboardPeriod }) {
         categories: (
             <Suspense fallback={<ChartSkeleton />}>
                 <CategoriesServer period={period} />
+            </Suspense>
+        ),
+        topicWatch: (
+            <Suspense fallback={<ChartSkeleton />}>
+                <TopicWatchServer period={period} />
             </Suspense>
         ),
     };

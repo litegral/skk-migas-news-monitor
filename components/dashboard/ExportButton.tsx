@@ -30,7 +30,7 @@ interface ExportButtonProps {
   /** Total matching articles in the feed (for enabling the button). */
   totalCount: number;
   /** Current feed filters — same as getFeedArticlesAction (without page/limit). */
-  exportQuery: Omit<ArticlesExportQueryParams, "dateFrom" | "dateTo">;
+  exportQuery: ArticlesExportQueryParams;
   /** Map of topic ID → topic name for resolving matchedTopicIds */
   topicMap?: Record<string, string>;
 }
@@ -108,13 +108,15 @@ export function ExportButton({
     setExportError(null);
 
     try {
-      const base: Omit<ArticlesExportQueryParams, "dateFrom" | "dateTo"> = {
+      const base: ArticlesExportQueryParams = {
         search: exportQuery.search,
         sentiment: exportQuery.sentiment,
         topics: exportQuery.topics,
         categories: exportQuery.categories,
         sources: exportQuery.sources,
         sortBy: exportQuery.sortBy,
+        dateFrom: exportQuery.dateFrom,
+        dateTo: exportQuery.dateTo,
       };
 
       const payload: ArticlesExportQueryParams =

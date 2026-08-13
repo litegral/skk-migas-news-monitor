@@ -33,6 +33,8 @@ export interface FeedQueryParams {
     categories?: string[];
     sources?: string[];
     sortBy?: "newest" | "oldest";
+    dateFrom?: string | null;
+    dateTo?: string | null;
 }
 
 /** Same filters as the feed, without pagination; optional inclusive `published_at` bounds (ISO strings). */
@@ -85,6 +87,9 @@ export async function getFeedArticlesAction(params: FeedQueryParams): Promise<{ 
         if (params.sources && params.sources.length > 0) {
             query = query.in("source_name", params.sources);
         }
+
+        if (params.dateFrom) query = query.gte("published_at", params.dateFrom);
+        if (params.dateTo) query = query.lte("published_at", params.dateTo);
 
         const ascending = params.sortBy === "oldest";
 

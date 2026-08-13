@@ -108,7 +108,7 @@ export function AddArticleModal({
         ) : (
           <form id="add-article-modal-form" onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="modal-add-link">URL artikel</Label>
+              <Label htmlFor="modal-add-link">Link artikel</Label>
               <Input
                 id="modal-add-link"
                 name="link"
